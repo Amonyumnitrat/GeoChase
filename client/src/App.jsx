@@ -39,11 +39,20 @@ function App() {
     const startLocationMapRef = useRef(null);
     const [narratorStartPos, setNarratorStartPos] = useState(null);
     const [isMinimapMaximized, setIsMinimapMaximized] = useState(false);
+    const minimapMaxRef = useRef(isMinimapMaximized); // Listener içinde state erişimi için
+    const [teleportRights, setTeleportRights] = useState(3);
+    const [isLoading, setIsLoading] = useState(false); // Yeni oyun başlatılırken/aranırken
+    const teleportRightsRef = useRef(3); // Listener içinde anlık erişim için
     const [isUiVisible, setIsUiVisible] = useState(true); // UI Toggle State
     const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
+    const [roundKey, setRoundKey] = useState(0); // Tur değişiminde haritayı yeniden oluşturmak için
+
+    // Narrator Hareketi Kısıtlama
+    const movementAnchorRef = useRef(null); // Hareketin merkezi (Başlangıç veya Işınlanma noktası)
+    const lastValidPosRef = useRef(null); // Son geçerli konum (Geri almak için)
 
     // Sabitler
-    const DEV_MODE = true; // true yaparak lobiyi atlayabilirsin
+    const DEV_MODE = false; // true yaparak lobiyi atlayabilirsin
     const BASE_WIDTH = 60;
     const BASE_HEIGHT = 90;
 
@@ -183,11 +192,28 @@ function App() {
         setUiMode('waiting');
     };
 
+    // Lobby Return Handler
+    const handleReturnToLobby = () => {
+        window.location.reload();
+    };
+
+
+
     // GAME START LOGIC (HOST)
     const handleStartGame = (attempts = 0) => {
+        if (attempts === 0) setIsLoading(true); // İlk denemede loading aç
         console.log(`Game Start Triggered (Attempt ${attempts + 1})`);
+
+        // Max deneme sayısını artır (Dünya geneli için daha fazla deneme gerekebilir)
+        if (attempts > 20) {
+            alert("Uygun Street View konumu bulunamadı. Lütfen tekrar deneyin.");
+            setIsLoading(false);
+            return;
+        }
+
         if (!socketRef.current) {
             alert("Sunucu bağlantısı yok!");
+            setIsLoading(false);
             return;
         }
         if (!roomId) {
@@ -199,49 +225,89 @@ function App() {
             return;
         }
 
-        if (attempts > 15) {
-            alert("Uygun Street View konumu bulunamadı. Lütfen tekrar deneyin.");
-            return;
+        // DÜNYA GENELİ RASTGELE KONUM ALGORİTMASI
+        // Okyanuslardan kaçınmak için kabaca kıta kutuları (Bounding Boxes) tanımlıyoruz.
+        const regions = [
+            { name: "Europe", latMin: 35, latMax: 70, lngMin: -10, lngMax: 40, weight: 4 },
+            { name: "North America", latMin: 25, latMax: 70, lngMin: -130, lngMax: -60, weight: 3 },
+            { name: "Asia", latMin: 10, latMax: 70, lngMin: 40, lngMax: 140, weight: 4 },
+            { name: "South America", latMin: -55, latMax: 15, lngMin: -80, lngMax: -35, weight: 2 },
+            { name: "Australia", latMin: -45, latMax: -10, lngMin: 110, lngMax: 155, weight: 2 },
+            { name: "Africa", latMin: -35, latMax: 35, lngMin: -20, lngMax: 50, weight: 1 } // Street view az
+        ];
+
+        // Ağırlıklı rastgele seçim
+        const totalWeight = regions.reduce((sum, r) => sum + r.weight, 0);
+        let randomVal = Math.random() * totalWeight;
+        let selectedRegion = regions[regions.length - 1];
+
+        for (const region of regions) {
+            randomVal -= region.weight;
+            if (randomVal <= 0) {
+                selectedRegion = region;
+                break;
+            }
         }
 
-        // Rastgele Konum Seç (İstanbul Geneli) - Kapsamı biraz genişletelim
-        const randomLat = 41.0082 + (Math.random() - 0.5) * 0.15;
-        const randomLng = 28.9784 + (Math.random() - 0.5) * 0.15;
+        const randomLat = selectedRegion.latMin + Math.random() * (selectedRegion.latMax - selectedRegion.latMin);
+        const randomLng = selectedRegion.lngMin + Math.random() * (selectedRegion.lngMax - selectedRegion.lngMin);
 
-        console.log("Searching for StreetView at:", randomLat, randomLng);
+        console.log(`Searching for StreetView in ${selectedRegion.name} at:`, randomLat, randomLng);
 
         const svService = new window.google.maps.StreetViewService();
         svService.getPanorama({
             location: { lat: randomLat, lng: randomLng },
-            radius: 1000,
+            radius: 100000, // 100km yarıçap (Issız yerlerde bile en yakın yolu bulsun)
             preference: window.google.maps.StreetViewPreference.NEAREST,
             source: window.google.maps.StreetViewSource.OUTDOOR
         }, (data, status) => {
             if (status === 'OK' && data && data.location && data.location.latLng) {
                 // KONTROL: Hareket edilebilir mi? (Link sayısı)
-                // Eğer hiç link yoksa oyuncu hareket edemez.
-                if (!data.links || data.links.length === 0) {
-                    console.warn("⚠️ Street View bulundu ama hareket edilemiyor (Link yok). Tekrar deneniyor...");
-                    setTimeout(() => handleStartGame(attempts + 1), 500);
+                if (!data.links || data.links.length < 2) {
+                    // En az 2 link olsun ki sıkışmayalım (Opsiyonel, duruma göre 1 de olabilir)
+                    console.warn("⚠️ Street View bulundu ama hareket kısıtlı. Tekrar deneniyor...");
+                    handleStartGame(attempts + 1);
                     return;
                 }
 
                 console.log(`✅ StreetView bulundu! Link sayısı: ${data.links.length}`);
                 const loc = data.location.latLng;
 
-                // Pano ID'yi de gönderelim ki herkes aynı kareye baksın
-                socketRef.current.emit('start-game', {
-                    roomId,
-                    narratorLocation: {
-                        lat: loc.lat(),
-                        lng: loc.lng(),
-                        panoId: data.location.pano
+                // Geocoder ile yer ismini bul (Şehir, Ülke)
+                const geocoder = new window.google.maps.Geocoder();
+                geocoder.geocode({ location: loc }, (results, status) => {
+                    let locationInfo = { city: "Bilinmiyor", country: "Bilinmiyor" };
+                    if (status === 'OK' && results[0]) {
+                        // Basitçe adres bileşenlerinden bulalım
+                        const components = results[0].address_components;
+                        let city = "";
+                        let country = "";
+
+                        for (const comp of components) {
+                            if (comp.types.includes("locality") || comp.types.includes("administrative_area_level_1")) {
+                                if (!city) city = comp.long_name;
+                            }
+                            if (comp.types.includes("country")) {
+                                country = comp.long_name;
+                            }
+                        }
+                        locationInfo = { city: city || "Bilinmiyor", country: country || "Bilinmiyor" };
                     }
+
+                    // Pano ID ve Location Info'yu gönder
+                    socketRef.current.emit('start-game', {
+                        roomId,
+                        narratorLocation: {
+                            lat: loc.lat(),
+                            lng: loc.lng(),
+                            panoId: data.location.pano
+                        },
+                        locationInfo // Yeni eklenen bilgi
+                    });
                 });
             } else {
-                console.warn("⚠️ Valid Street View not found, retrying...", status);
-                // 500ms bekleyip tekrar dene
-                setTimeout(() => handleStartGame(attempts + 1), 500);
+                console.warn(`⚠️ Valid Street View not found in ${selectedRegion.name}, retrying...`, status);
+                handleStartGame(attempts + 1);
             }
         });
     };
@@ -276,11 +342,16 @@ function App() {
 
             // OYUN BAŞLADI
             socketRef.current.on('game-started', (data) => {
-                setUiMode('game');
+                // START ile 'game' yapma, konum hazır olunca yap
+                // setUiMode('game'); <-- REMOVED
+
                 setGameEndTime(data.endTime);
                 setNarratorId(data.narratorId);
                 setNarratorFound(false);
                 setGameOverData(null); // Reset game over screen
+                setTeleportRights(3);
+                teleportRightsRef.current = 3;
+                setIsLoading(false); // Oyun başladı, loading kapat
 
                 // Show Narrator Start Location
                 if (data.initialPositions[data.narratorId]) {
@@ -292,6 +363,18 @@ function App() {
                     setTimeout(() => setShowStartLocation(false), 15000); // 15 Saniye
                 }
 
+                // Sync other players' initial positions
+                setOtherPlayers(prev => {
+                    const newMap = new Map(prev);
+                    Object.entries(data.initialPositions).forEach(([id, pos]) => {
+                        if (id !== socketRef.current.id) {
+                            const existing = newMap.get(id) || {};
+                            newMap.set(id, { ...existing, lat: pos.lat, lng: pos.lng, role: pos.role });
+                        }
+                    });
+                    return newMap;
+                });
+
                 // Rolümü Bul, Pozisyonumu Al
                 const myData = data.initialPositions[socketRef.current.id];
                 if (myData) {
@@ -299,76 +382,76 @@ function App() {
 
                     // NARRATOR Zaten Valid Konumda Başlıyor
                     if (myData.role === 'narrator') {
+                        // Hareket kısıtlaması için çapa at
+                        movementAnchorRef.current = { lat: myData.lat, lng: myData.lng };
+                        lastValidPosRef.current = { lat: myData.lat, lng: myData.lng };
+
+                        // Önce pozisyonu ayarla, sonra game moduna geç
+                        // useEffect(position, uiMode) haritayı bu konumla oluşturacak
                         setPosition({ lat: myData.lat, lng: myData.lng });
-                        if (panoramaRef.current) {
-                            // Pano ID varsa direkt oraya git (Daha kesin)
-                            if (data.initialPositions[socketRef.current.id].panoId) {
-                                panoramaRef.current.setPano(data.initialPositions[socketRef.current.id].panoId);
-                            } else {
-                                panoramaRef.current.setPosition({ lat: myData.lat, lng: myData.lng });
-                            }
-                        }
+                        setUiMode('game');
                     }
-                    // SEEKER İÇİN SNAP LOGIC (Suya düşmemesi için)
+                    // SEEKER İÇİN
+                    // SEEKER İÇİN SNAP LOGIC (Geçerli Yol Kontrolü)
                     else {
                         // Server rastgele bir nokta verdi ama bu suyun içi olabilir.
                         // Biz bu noktanın EN YAKININDAKİ street view'i bulup oraya ışınlanalım.
                         const svService = new window.google.maps.StreetViewService();
+
+                        // Yarıçapı 50m'ye düşürdük (Daha isabetli olsun)
                         svService.getPanorama({
                             location: { lat: myData.lat, lng: myData.lng },
-                            radius: 500, // 500m içinde kara ara
+                            radius: 50,
                             preference: window.google.maps.StreetViewPreference.NEAREST,
                             source: window.google.maps.StreetViewSource.OUTDOOR
                         }, (panoData, status) => {
                             if (status === 'OK' && panoData && panoData.location) {
                                 const validLat = panoData.location.latLng.lat();
                                 const validLng = panoData.location.latLng.lng();
-                                console.log("Seekeer Snapped to Road:", validLat, validLng);
+                                console.log("✅ Seeker Snapped to Road:", validLat, validLng);
 
                                 setPosition({ lat: validLat, lng: validLng });
-                                if (panoramaRef.current) {
-                                    panoramaRef.current.setPosition({ lat: validLat, lng: validLng });
-                                }
 
-                                // Server'a gerçek/geçerli konumumu bildir
+                                // Server'a da doğrusunu bildir
                                 socketRef.current.emit('update-position', {
                                     lat: validLat, lng: validLng,
                                     heading: 0,
                                     role: 'seeker',
-                                    roomId: roomId // Bunu state'den ya da kaplamdan almalı
+                                    roomId: data.roomId // roomId scope'dan gelmeyebilir, data context'ten emin oluyoruz
                                 });
+
+                                setUiMode('game');
                             } else {
-                                // Bulamazsa (Örn: Denizin ortası 500m'den uzaksa), ANLATICI'nın yanına ışınla.
-                                // Anlatıcı konumu her zaman garantidir.
-                                console.warn("Seeker spawn point invalid (water?), fallback to Narrator location.");
+                                // Bulamazsa (Örn: Denizin ortası), ANLATICI'nın yanına ışınla.
+                                console.warn("⚠️ Seeker spawn invalid, fallback to Narrator location.");
 
                                 const narratorPos = data.initialPositions[data.narratorId];
                                 if (narratorPos) {
                                     setPosition({ lat: narratorPos.lat, lng: narratorPos.lng });
-                                    if (panoramaRef.current) {
-                                        // Biraz şaşırtmaca olsun diye 50m rastgele açı ile ışınlayabiliriz ama
-                                        // şimdilik direkt güvenli noktaya alalım.
-                                        panoramaRef.current.setPosition({ lat: narratorPos.lat, lng: narratorPos.lng });
-                                    }
-                                    // Servera güncelleme at
+
                                     socketRef.current.emit('update-position', {
                                         lat: narratorPos.lat, lng: narratorPos.lng,
                                         heading: 0,
                                         role: 'seeker',
-                                        roomId: roomId
+                                        roomId: data.roomId
                                     });
+
+                                    setUiMode('game');
                                 }
                             }
                         });
                     }
                 }
 
+                // Tur değişti, haritayı yeniden oluşturmak için key'i artır
+                setRoundKey(prev => prev + 1);
+
                 // Rol Ekranını Göster
                 setShowRoleReveal(true);
                 setTimeout(() => setShowRoleReveal(false), 4000); // 4sn sonra kapat
             });
 
-            // ANLATICI BULUNDU (30sn Timer)
+            // ANLATICI BULUNDU (5sn Timer)
             socketRef.current.on('narrator-found', (data) => {
                 setNarratorFound(true);
                 setGameEndTime(data.newEndTime);
@@ -413,6 +496,13 @@ function App() {
             });
 
 
+
+            // RESET UI BETWEEN ROUNDS
+            socketRef.current.on('reset-game-ui', () => {
+                setUiMode('waiting');
+                setGameOverData(null);
+                setIsLoading(false);
+            });
 
             socketRef.current.on('player-disconnected', (playerId) => {
                 setOtherPlayers(prev => {
@@ -469,8 +559,10 @@ function App() {
         }
     }, [showStartLocation, narratorStartPos]);
 
-    // Minimap Resize Trigger -- Harita büyüyüp küçülünce gri kalmaması için
+    // Minimap Resize Trigger
     useEffect(() => {
+        minimapMaxRef.current = isMinimapMaximized; // Ref'i güncelle (Listener için)
+
         if (mapInstanceRef.current && window.google) {
             const timer = setTimeout(() => {
                 window.google.maps.event.trigger(mapInstanceRef.current, 'resize');
@@ -510,8 +602,8 @@ function App() {
             const narrator = otherPlayers.get(narratorId);
             if (narrator) {
                 const dist = getDistance(position.lat, position.lng, narrator.lat, narrator.lng);
-                // 30 metre görüş/bulma mesafesi
-                if (dist < 30) {
+                // 50 metre görüş/bulma mesafesi (Kullanıcı isteği: 30 -> 50)
+                if (dist < 50) {
                     socketRef.current.emit('found-narrator', { roomId, finderId: socketRef.current.id });
                 }
             }
@@ -594,12 +686,83 @@ function App() {
         });
         mapInstanceRef.current = map2D;
 
+        // MINIMAP TELEPORT LISTENER
+        map2D.addListener('click', (e) => {
+            // Sadece BÜYÜK MODDA iken tıklanabilir olsun
+            // Ref kullanarak güncel state değerini kontrol ediyoruz
+            if (!minimapMaxRef.current) {
+                return;
+            }
+
+            // Işınlanma hakkı kontrolü
+            if (teleportRightsRef.current <= 0) {
+                // Hakkı kalmadı
+                console.log("Işınlanma hakkı bitti!");
+                return;
+            }
+
+            if (!panoramaRef.current || !e.latLng) return;
+
+            const clickedLat = e.latLng.lat();
+            const clickedLng = e.latLng.lng();
+            console.log("Minimap Clicked:", clickedLat, clickedLng);
+
+            // Tıklanan yere en yakın Street View'i bul
+            const svService = new window.google.maps.StreetViewService();
+            svService.getPanorama({
+                location: { lat: clickedLat, lng: clickedLng },
+                radius: 25, // Çok dar (10m) olursa bulamayabilir, çok geniş (50m) olursa yan sokağa atabilir. 25m ideal.
+                preference: window.google.maps.StreetViewPreference.BEST, // En yakın değil, en "iyi" eşleşmeyi bul
+                source: window.google.maps.StreetViewSource.DEFAULT // Sadece outdoor zorlamasını kaldır (Veri eksik olabilir)
+            }, (data, status) => {
+                if (status === 'OK' && data && data.location) {
+                    const newLoc = data.location.latLng;
+
+                    // Panoramayı oraya taşı
+                    panoramaRef.current.setPosition(newLoc);
+
+                    // Hakkı düş
+                    teleportRightsRef.current -= 1;
+                    setTeleportRights(prev => prev - 1);
+
+                    // YENİ ANCHOR NOKTASI: Işınlanınca merkez burası olur
+                    movementAnchorRef.current = { lat: newLoc.lat(), lng: newLoc.lng() };
+                    lastValidPosRef.current = { lat: newLoc.lat(), lng: newLoc.lng() };
+
+                    // State ve Socket güncellemesi zaten 'position_changed' listener'ı tarafından yapılacak
+                    // O yüzden burada manuel setPosition veya emit yapmaya gerek yok.
+                    // panoramaRef.current.setPosition() -> triggers 'position_changed' -> updates state -> emits socket
+                } else {
+                    console.warn("No Street View found near click location.");
+                }
+            });
+        });
+
+        // Event Listeners
         // Event Listeners
         panorama.addListener('position_changed', () => {
             const newPos = panorama.getPosition();
             if (newPos) {
                 const lat = newPos.lat();
                 const lng = newPos.lng();
+
+                // --- HAREKET KISITLAMASI (Sadece Anlatıcı) ---
+                if (role === 'narrator' && movementAnchorRef.current) {
+                    const dist = getDistance(lat, lng, movementAnchorRef.current.lat, movementAnchorRef.current.lng);
+
+                    // 50 Metreden fazla uzaklaştıysa
+                    if (dist > 50) {
+                        // Geri Işınla (Son geçerli konuma)
+                        if (lastValidPosRef.current) {
+                            panorama.setPosition(lastValidPosRef.current);
+                        }
+                        return; // Güncellemeyi durdur
+                    } else {
+                        // Mesafe uygun, bu konumu "Son Geçerli" olarak kaydet
+                        lastValidPosRef.current = { lat, lng };
+                    }
+                }
+
                 setPosition({ lat, lng });
 
                 if (mapInstanceRef.current) {
@@ -609,7 +772,6 @@ function App() {
                 socketRef.current?.emit('update-position', {
                     lat, lng,
                     heading: panorama.getPov().heading,
-                    role: 'seeker',
                     roomId
                 });
             }
@@ -623,7 +785,7 @@ function App() {
             setHeading(panorama.getPov().heading);
         });
 
-    }, [isMapLoaded, uiMode]); // uiMode değişince (game olunca) çalışacak
+    }, [isMapLoaded, uiMode, roundKey]); // roundKey değişince haritayı yeniden oluştur
 
     // 4. Marker Güncelleme (Rendering + Visibility Rule)
     useEffect(() => {
@@ -717,11 +879,12 @@ function App() {
     }, [otherPlayers, position, zoom, narratorFound, uiMode]); // Visibility için bağımlılıklar
 
     // 5. Rotation
-    useEffect(() => {
-        if (minimapRef.current) {
-            minimapRef.current.style.transform = `translate(-50%, -50%) rotate(${-heading}deg)`;
-        }
-    }, [heading]);
+    // 5. Rotation - ARTIK KULLANILMIYOR (Harita sabit kalsın, ok dönsün)
+    // useEffect(() => {
+    //     if (minimapRef.current) {
+    //         minimapRef.current.style.transform = `translate(-50%, -50%) rotate(${-heading}deg)`;
+    //     }
+    // }, [heading]);
 
     // 6. FPS Controls (Mouse Look + Keyboard Move)
     useEffect(() => {
@@ -803,9 +966,10 @@ function App() {
                 setTimeLeft(diff);
                 if (diff <= 0) {
                     clearInterval(timer);
-                    // Süre doldu, servera bildir (Sadece host veya anlatıcı yapsın ki spam olmasın)
-                    // Basitlik için: Herkes emit edebilir, server ilk geleni kabul eder.
-                    socketRef.current.emit('time-up', { roomId });
+                    // Süre doldu, servera bildir (Sadece host yapsın ki çakışma/spam olmasın)
+                    if (isCreator) {
+                        socketRef.current.emit('time-up', { roomId });
+                    }
                 }
             }, 1000);
             return () => clearInterval(timer);
@@ -821,6 +985,9 @@ function App() {
             setGameOverData(null); // Skor tablosunu kapat
             setNarratorFound(false);
             setGameEndTime(null);
+            // Işınlanma hakkını sıfırla
+            setTeleportRights(3);
+            teleportRightsRef.current = 3;
             // Harita instance'larını temizleme işini zaten useEffect(uiMode) yapıyor
         });
 
@@ -829,9 +996,19 @@ function App() {
         };
     }, []);
 
-    // NEXT ROUND Butonu
+    // NEXT ROUND Butonu (Host tarafından çağrılır)
+    // NEXT ROUND Butonu (Host tarafından çağrılır)
     const handleNextRound = () => {
-        socketRef.current.emit('next-round', { roomId });
+        if (socketRef.current) {
+            socketRef.current.emit('next-round', { roomId });
+
+            // UI'ın sıfırlanması ve herkesin senkronize olması için kısa bir gecikme ekliyoruz.
+            // Bu "bambaşka çözüm", her iki tarafın önce temizlenmesini garanti eder.
+            setIsLoading(true);
+            setTimeout(() => {
+                handleStartGame(); // Yeni konum aramasını başlat (2 saniye sonra)
+            }, 2000);
+        }
     };
 
     // Format Timer
@@ -852,6 +1029,7 @@ function App() {
                 onStart={handleStartGame}
                 myUsername={username}
                 myColor={myColor}
+                isLoading={isLoading}
             />
         );
     }
@@ -977,11 +1155,42 @@ function App() {
                     zIndex: isMinimapMaximized ? 2000 : 10,
                     transition: 'all 0.3s ease'
                 }}>
-                    <div ref={minimapRef} className="minimap-content"></div>
+                    <div key={`minimap-${roundKey}`} ref={minimapRef} className="minimap-content"></div>
                     <div className="player-marker-ui" style={{
-                        background: myColor,
-                        boxShadow: `0 0 8px ${myColor}80`
-                    }}></div>
+                        // SVG Rotasyonu. CSS'teki transformu ezer, o yüzden translate'i de ekliyoruz.
+                        transform: `translate(-50%, -50%) rotate(${heading}deg)`
+                    }}>
+                        {/* Neon filtresi kaldırıldı */}
+                        <svg width="100%" height="100%" viewBox="0 0 24 24" style={{ overflow: 'visible' }}>
+                            {/* Beyaz Çerçeveli İçeren Damla - Orta Boy, Daha Yumuşak (Tatlış) */}
+                            <path
+                                d="M 12 -2 C 12 -2 20 5 20 12 A 8 8 0 1 1 4 12 C 4 5 12 -2 12 -2 Z"
+                                fill={myColor}
+                                stroke="#ffffff"
+                                strokeWidth="2"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    </div>
+
+                    {/* Işınlanma Hakkı Göstergesi (Sadece Maximized iken) */}
+                    {isMinimapMaximized && (
+                        <div style={{
+                            position: 'absolute',
+                            bottom: 5,
+                            left: 5,
+                            background: 'rgba(0,0,0,0.6)',
+                            color: teleportRights > 0 ? '#00ff88' : '#ff4444',
+                            padding: '5px 10px',
+                            borderRadius: '5px',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            zIndex: 2002
+                        }}>
+                            Işınlanma: {teleportRights}
+                        </div>
+                    )}
 
                     {/* Maximize/Minimize Button */}
                     <button
@@ -1010,7 +1219,7 @@ function App() {
                 </div>
             )}
 
-            <div ref={mapRef} className="street-view">
+            <div key={`streetview-${roundKey}`} ref={mapRef} className="street-view">
                 {!isMapLoaded && <div style={{ color: 'white', textAlign: 'center', paddingTop: 100 }}>Yükleniyor...</div>}
             </div>
 
@@ -1066,38 +1275,95 @@ function App() {
                             {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
                         </div>
 
-                        <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '300px', overflowY: 'auto' }}>
-                            {gameOverData.scores.map((s, i) => (
-                                <div key={i} style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    padding: '10px',
-                                    background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                    marginBottom: '5px',
-                                    borderRadius: '5px',
-                                    border: s.isWinner ? '1px solid #00ff88' : 'none'
-                                }}>
-                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                        <span style={{ color: '#aaa' }}>#{i + 1}</span>
-                                        <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
-                                        <span style={{ fontSize: '0.8rem', opacity: 0.7, alignSelf: 'center' }}>
-                                            ({s.role === 'narrator' ? 'Anlatıcı' : 'Arayıcı'})
-                                        </span>
-                                    </div>
-                                    <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
+                        {/* KONUM BİLGİSİ */}
+                        {gameOverData.locationInfo && (
+                            <div style={{
+                                marginTop: '10px',
+                                padding: '10px',
+                                background: 'rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
+                                    {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
                                 </div>
-                            ))}
+                            </div>
+                        )}
+
+                        <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {/* ANLATICI BÖLÜMÜ */}
+                            <div>
+                                <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
+                                    ANLATICI
+                                </div>
+                                {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
+                                    <div key={`narrator-${i}`} style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        padding: '10px',
+                                        background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        marginBottom: '5px',
+                                        borderRadius: '5px',
+                                        border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                    }}>
+                                        <div style={{ display: 'flex', gap: '10px' }}>
+                                            <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                        </div>
+                                        <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* ARAYICILAR BÖLÜMÜ */}
+                            <div>
+                                <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
+                                    ARAYICILAR
+                                </div>
+                                {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
+                                    <div key={`seeker-${i}`} style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        padding: '10px',
+                                        background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        marginBottom: '5px',
+                                        borderRadius: '5px',
+                                        border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                    }}>
+                                        <div style={{ display: 'flex', gap: '10px' }}>
+                                            <span style={{ color: '#aaa' }}>#{i + 1}</span>
+                                            <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                        </div>
+                                        <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
-                        {isCreator && (
-                            <button className="join-btn" onClick={handleNextRound} style={{ width: '100%' }}>
-                                YENİ TUR BAŞLAT
+                        {(isCreator || gameOverData.isFinalGameEnd) && (
+                            <button
+                                className="join-btn"
+                                onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
+                                style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
+                            >
+                                {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
                             </button>
                         )}
-                        {!isCreator && <div style={{ color: '#aaa' }}>Oda kurucusunun yeni turu başlatması bekleniyor...</div>}
+                        {!isCreator && !gameOverData.isFinalGameEnd && (
+                            <div style={{ color: '#aaa', marginTop: '10px' }}>
+                                Oda kurucusunun yeni turu başlatması bekleniyor...
+                            </div>
+                        )}
+                        {gameOverData.isFinalGameEnd && (
+                            <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
+                                🏆 Herkes anlatıcı görevini tamamladı!
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
+
+
 
 
             {/* AYARLAR PANELİ (MODAL) */}

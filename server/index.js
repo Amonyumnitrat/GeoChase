@@ -40,20 +40,23 @@ const players = new Map();
 // Key: roomId, Value: { narratorId, startTime, endTime, narratorLocation, isEnding }
 const rooms = new Map();
 
-// Helper: Rastgele Konum (Belirli bir merkezden radius kadar uzakta)
-function getRandomLocation(centerLat, centerLng, radiusInMeters) {
-  const r = radiusInMeters / 111300; // Metreyi dereceye çevir (kabaca)
-  const u = Math.random();
+// Helper: Rastgele Konum (Belirli bir halka/ring içinde)
+function getRandomLocation(centerLat, centerLng, minRadius, maxRadius) {
+  const minR = minRadius / 111300;
+  const maxR = maxRadius / 111300;
+
+  // Halka içinde homojen dağılım için karekök formülü
+  const r = Math.sqrt(Math.random() * (maxR * maxR - minR * minR) + (minR * minR));
+
   const v = Math.random();
-  const w = r * Math.sqrt(u);
   const t = 2 * Math.PI * v;
-  const x = w * Math.cos(t);
-  const y = w * Math.sin(t);
+  const dx = r * Math.cos(t);
+  const dy = r * Math.sin(t);
 
-  const newLat = centerLat + x;
-  const newLng = centerLng + y / Math.cos(centerLat * Math.PI / 180); // Boylam düzeltmesi
-
-  return { lat: newLat, lng: newLng };
+  return {
+    lat: centerLat + dx,
+    lng: centerLng + dy / Math.cos(centerLat * Math.PI / 180)
+  };
 }
 
 io.on('connection', (socket) => {
@@ -84,6 +87,14 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     console.log(`✅ ${username} odaya girdi: ${roomId}`);
+
+    // Odayı ilklendir (Eğer yoksa)
+    if (!rooms.has(roomId)) {
+      rooms.set(roomId, {
+        pastNarrators: [],
+        active: false
+      });
+    }
 
     // ODADAKİ DİĞERLERİNE BİLDİR
     socket.to(roomId).emit('player-joined', {
@@ -124,10 +135,14 @@ io.on('connection', (socket) => {
   });
 
   // 5. Oyunu Başlat
-  socket.on('start-game', ({ roomId, narratorLocation }) => {
+  socket.on('start-game', ({ roomId, narratorLocation, locationInfo }) => {
     try {
       console.log(`🎮 [SERVER] Oyun başlatma isteği geldi. Oda: ${roomId}`);
       console.log(`📍 [SERVER] Narrator Konumu:`, narratorLocation);
+      console.log(`🌍 [SERVER] Konum Bilgisi:`, locationInfo);
+
+      const room = rooms.get(roomId);
+      if (!room) return;
 
       const roomPlayers = Array.from(players.entries()).filter(([id, p]) => p.roomId === roomId);
       console.log(`👥 [SERVER] Odadaki oyuncu sayısı: ${roomPlayers.length}`);
@@ -137,10 +152,23 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // A. Rol Dağıtımı (Rastgele 1 Anlatıcı)
-      const narratorIndex = Math.floor(Math.random() * roomPlayers.length);
-      const narratorId = roomPlayers[narratorIndex][0]; // [id, data]
-      console.log(`🎲 [SERVER] Anlatıcı seçildi: ${narratorId}`);
+      // A. Rol Dağıtımı (Sırayla Anlatıcı Seçimi)
+      // Daha önce anlatıcı olmamış oyuncuları bul
+      const availablePlayers = roomPlayers.filter(([id, p]) => !room.pastNarrators.includes(id));
+
+      let narratorId;
+      if (availablePlayers.length > 0) {
+        // Sıradaki ilk uygun oyuncuyu seç
+        narratorId = availablePlayers[0][0];
+      } else {
+        // Eğer herkes anlatıcı olduysa (Yine de bir tur daha istenmişse), sıfırla ve yeniden başla
+        // VEYA client tarafında buton gizlenmeli. Biz burada fallback olarak sıfırlayalım.
+        room.pastNarrators = [];
+        narratorId = roomPlayers[0][0];
+      }
+
+      room.pastNarrators.push(narratorId);
+      console.log(`🎲 [SERVER] Anlatıcı seçildi: ${narratorId} (Sıradaki)`);
 
       // B. Spawn Noktaları
       const initialPositions = {};
@@ -152,7 +180,7 @@ io.on('connection', (socket) => {
           p.lng = narratorLocation.lng;
         } else {
           p.role = 'seeker';
-          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, 100);
+          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, 150, 300);
           p.lat = spawn.lat;
           p.lng = spawn.lng;
         }
@@ -165,13 +193,13 @@ io.on('connection', (socket) => {
       const startTime = Date.now();
       const endTime = startTime + (5 * 60 * 1000); // 5 Dakika
 
-      rooms.set(roomId, {
-        narratorId,
-        startTime,
-        endTime,
-        narratorLocation,
-        isEnding: false
-      });
+      room.narratorId = narratorId;
+      room.startTime = startTime;
+      room.endTime = endTime;
+      room.narratorLocation = narratorLocation;
+      room.locationInfo = locationInfo;
+      room.isEnding = false;
+      room.active = true;
 
       // D. Başlangıç Verisini Gönder
       console.log(`🚀 [SERVER] 'game-started' eventi gönderiliyor...`);
@@ -192,71 +220,80 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (!room || room.isEnding) return;
 
-    // 30 saniye sonra bitecek şekilde güncelle
-    // Eğer zaten 30sn'den az kaldıysa değiştirme
+    // 30 saniye sonra bitecek şekilde güncelle (Kullanıcı isteği: 30sn -> 5sn)
     const now = Date.now();
-    const remaining = room.endTime - now;
+    room.endTime = now + 3000;
+    room.isEnding = true;
+    room.finderId = finderId; // Kimin bulduğunu kaydet
 
-    if (remaining > 0) { // Sadece oyun devam ediyorsa
-      room.endTime = now; // Hemen bitir
-      room.isEnding = true;
+    // Herkese duyur (5 saniye başladı)
+    io.to(roomId).emit('narrator-found', {
+      newEndTime: room.endTime,
+      finderId: finderId
+    });
 
-      // PUAN HESAPLAMA
-      const scores = [];
-      const roomPlayers = Array.from(players.entries()).filter(([id, p]) => p.roomId === roomId);
-
-      roomPlayers.forEach(([id, p]) => {
-        let score = 0;
-        if (id === finderId) score += 100; // Bulan kişi
-        if (p.role === 'seeker' && id !== finderId) score += 50; // Diğer arayıcılar (Katılım)
-        if (p.role === 'narrator') score += 10; // Yakalanan anlatıcı (Teselli)
-
-        p.totalScore = (p.totalScore || 0) + score;
-        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: id === finderId });
-      });
-
-      // Skorlara göre sırala
-      scores.sort((a, b) => b.score - a.score);
-
-      // Herkese Game Over Bildir
-      io.to(roomId).emit('game-over', {
-        reason: 'narrator_found',
-        finderId,
-        scores
-      });
-      console.log(`🏁 [SERVER] Oyun Bitti (Bulundu): ${roomId}`);
-    }
+    console.log(`🎯 [SERVER] Anlatıcı bulundu! 5sn başladı. Oda: ${roomId}`);
   });
 
   // 8. Süre Doldu (Server Kontrolü veya Client Tetiklemesi)
-  // Basitlik için Client'lardan biri "time-up" atarsa bitirelim veya server interval kuralım.
-  // Server-side robust timer tercih edilir ama şimdilik client-side time-up'a güvenelim (prototype)
   socket.on('time-up', ({ roomId }) => {
     const room = rooms.get(roomId);
-    if (!room || room.isEnding) return;
+    if (!room) return;
 
-    room.isEnding = true;
-    room.endTime = Date.now();
+    // Eğer zaten bitiş süreci başlatılmadıysa (isEnding false), 
+    // bu normal süre bitimidir (Anlatıcı kazanır).
+    // Eğer isEnding true ise, narrator-found sonrası 30sn dolmuştur.
 
-    // PUAN HESAPLAMA (Anlatıcı Kazanır)
     const scores = [];
     const roomPlayers = Array.from(players.entries()).filter(([id, p]) => p.roomId === roomId);
+    let reason = 'time_up';
+    let winnerId = null;
 
-    roomPlayers.forEach(([id, p]) => {
-      let score = 0;
-      if (p.role === 'narrator') score += 200; // Kaçan anlatıcı (Büyük ödül)
-      if (p.role === 'seeker') score += 10; // Kaybeden arayıcılar
+    if (room.isEnding && room.finderId) {
+      // Birisi anlatıcıyı buldu ve 30 saniye doldu
+      reason = 'narrator_found';
+      winnerId = room.finderId;
 
-      p.totalScore = (p.totalScore || 0) + score;
-      scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: p.role === 'narrator' });
-    });
+      roomPlayers.forEach(([id, p]) => {
+        let score = 0;
+        if (id === room.finderId) score += 100;
+        if (p.role === 'seeker' && id !== room.finderId) score += 50;
+        if (p.role === 'narrator') score += 10;
+        p.totalScore = (p.totalScore || 0) + score;
+        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: id === room.finderId });
+      });
+    } else {
+      // Kimse bulamadı, süre doldu
+      reason = 'time_up';
+      roomPlayers.forEach(([id, p]) => {
+        let score = 0;
+        if (p.role === 'narrator') {
+          score += 200;
+          winnerId = id;
+        }
+        if (p.role === 'seeker') score += 10;
+        p.totalScore = (p.totalScore || 0) + score;
+        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: p.role === 'narrator' });
+      });
+    }
+
     scores.sort((a, b) => b.score - a.score);
 
+    // Oyun Tamamen Bitti mi? (Herkes anlatıcı oldu mu?)
+    const availableCount = roomPlayers.filter(([id, p]) => !room.pastNarrators.includes(id)).length;
+    const isFinalGameEnd = availableCount === 0;
+
     io.to(roomId).emit('game-over', {
-      reason: 'time_up',
-      scores
+      reason,
+      finderId: room.finderId,
+      scores,
+      locationInfo: room.locationInfo,
+      isFinalGameEnd // Client bu bilgiye göre "Yeni Tur" butonunu gizleyebilir/değiştirebilir
     });
-    console.log(`🏁 [SERVER] Oyun Bitti (Süre Doldu): ${roomId}`);
+
+    // Odayı sadece pasife çek, silme (Geçmişi koru)
+    room.active = false;
+    console.log(`🏁 [SERVER] Tur Bitti (${reason}): ${roomId}. Kalan Anlatıcı: ${availableCount}`);
   });
 
   // 9. Yeni Tur
@@ -278,7 +315,12 @@ io.on('connection', (socket) => {
       if (roomId) {
         socket.to(roomId).emit('player-disconnected', socket.id);
 
-        // Eğer anlatıcı çıktıysa oyunu bitir? (Şimdilik basit tutalım)
+        // Oda temizliği: Kimse kalmadıysa odayı sil
+        const roomPlayers = Array.from(players.values()).filter(p => p.roomId === roomId);
+        if (roomPlayers.length === 0) {
+          rooms.delete(roomId);
+          console.log(`🧹 [SERVER] Oda temizlendi: ${roomId}`);
+        }
       }
     }
     console.log('❌ Ayrıldı:', socket.id);

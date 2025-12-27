@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import '../App.css'; // Re-use global styles
 
-function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor }) {
+function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading }) {
     const [username, setUsername] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [isThinking, setIsThinking] = useState(false);
@@ -105,7 +105,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                     </div>
 
                     {isCreator ? (
-                        <button onClick={onStart} className="start-btn" style={{
+                        <button onClick={onStart} className="start-btn" disabled={isLoading} style={{
                             width: '100%',
                             padding: '15px',
                             background: 'linear-gradient(to right, #00ff88, #00ffff)',
@@ -115,9 +115,10 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             fontSize: '1.2rem',
                             fontWeight: '900',
                             cursor: 'pointer',
-                            boxShadow: '0 0 20px rgba(0,255,136,0.3)'
+                            boxShadow: '0 0 20px rgba(0,255,136,0.3)',
+                            opacity: isLoading ? 0.7 : 1
                         }}>
-                            OYUNU BAŞLAT
+                            {isLoading ? 'KONUM ARANIYOR...' : 'OYUNU BAŞLAT'}
                         </button>
                     ) : (
                         <div style={{ color: '#00ff88', fontSize: '1rem', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
