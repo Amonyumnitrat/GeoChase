@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import '../App.css'; // Re-use global styles
 
-function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading }) {
+function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission }) {
     const [username, setUsername] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [isThinking, setIsThinking] = useState(false);
@@ -45,6 +45,30 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
             onJoin(username, roomCode.toUpperCase(), false);
         }, 800);
     };
+
+    // INTERMISSION (ARA EKRAN)
+    if (mode === 'waiting' && isIntermission) {
+        return (
+            <div className="lobby-container">
+                <div className="lobby-card" style={{ maxWidth: '400px', textAlign: 'center', padding: '40px' }}>
+                    <div style={{
+                        width: '60px', height: '60px',
+                        background: '#00ff88', borderRadius: '50%',
+                        margin: '0 auto 20px'
+                    }}></div>
+                    <h2 style={{ color: 'white', marginBottom: '10px' }}>SONRAKİ TUR HAZIRLANIYOR</h2>
+                    <p style={{ color: '#aaa', fontSize: '0.9rem' }}>
+                        Lütfen bekleyin, herkes yeni konuma ışınlanıyor...
+                    </p>
+                    {isCreator && (
+                        <div style={{ marginTop: '20px', color: '#00ffff', fontSize: '0.8rem' }}>
+                            (Oda Kurucusu: Konum aranıyor...)
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     // BEKLEME ODASI (WAITING ROOM)
     if (mode === 'waiting') {
@@ -115,13 +139,12 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             fontSize: '1.2rem',
                             fontWeight: '900',
                             cursor: 'pointer',
-                            boxShadow: '0 0 20px rgba(0,255,136,0.3)',
                             opacity: isLoading ? 0.7 : 1
                         }}>
                             {isLoading ? 'KONUM ARANIYOR...' : 'OYUNU BAŞLAT'}
                         </button>
                     ) : (
-                        <div style={{ color: '#00ff88', fontSize: '1rem', fontWeight: 'bold', animation: 'pulse 1.5s infinite' }}>
+                        <div style={{ color: '#00ff88', fontSize: '1rem', fontWeight: 'bold' }}>
                             Liderin oyunu başlatması bekleniyor...
                         </div>
                     )}

@@ -117,7 +117,6 @@ body {
 .connected .status-dot {
   background-color: #00ff88;
   /* Yeşil */
-  box-shadow: 0 0 8px #00ff88;
 }
 
 /* AVATAR DÜZELTMESİ (ÖNEMLİ) */
@@ -210,8 +209,8 @@ img[src*="avatar.png"] {
 }
 
 .input-group input:focus {
-  border-color: #00ff88;
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.2);
+  border-color: #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.1);
 }
 
 .join-btn {
@@ -255,5 +254,19 @@ img[src*="avatar.png"] {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+  }
+
+  70% {
+    transform: scale(1);
+  }
+
+  100% {
+    transform: scale(0.95);
   }
 }

@@ -1,0 +1,33 @@
+    // --- START LOCATION MAP INIT ---
+    // Bu kod silinmişti, geri ekliyoruz.
+    useEffect(() => {
+        if (showStartLocation && startLocationMapRef.current && startLocation && window.google) {
+            console.log("🗺️ Start Location Map Başlatılıyor...", startLocation);
+            
+            const mapOptions = {
+                center: startLocation,
+                zoom: 18,
+                disableDefaultUI: true,
+                draggable: false,
+                zoomControl: false,
+                scrollwheel: false,
+                disableDoubleClickZoom: true,
+                mapTypeId: 'satellite' // Uydu görüntüsü daha havalı durur
+            };
+
+            const map = new window.google.maps.Map(startLocationMapRef.current, mapOptions);
+
+            new window.google.maps.Marker({
+                position: startLocation,
+                map: map,
+                icon: {
+                    path: window.google.maps.SymbolPath.CIRCLE,
+                    scale: 10,
+                    fillColor: "#FF4444",
+                    fillOpacity: 1,
+                    strokeColor: "white",
+                    strokeWeight: 2,
+                }
+            });
+        }
+    }, [showStartLocation, startLocation, isMapLoaded]);

@@ -36,6 +36,7 @@ function App() {
     const [gameOverData, setGameOverData] = useState(null); // { scores: [] }
 
     const [showStartLocation, setShowStartLocation] = useState(false);
+    const [revealTimeLeft, setRevealTimeLeft] = useState(15);
     const startLocationMapRef = useRef(null);
     const [narratorStartPos, setNarratorStartPos] = useState(null);
     const [isMinimapMaximized, setIsMinimapMaximized] = useState(false);
@@ -46,6 +47,7 @@ function App() {
     const [isUiVisible, setIsUiVisible] = useState(true); // UI Toggle State
     const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
     const [roundKey, setRoundKey] = useState(0); // Tur değişiminde haritayı yeniden oluşturmak için
+    const [hasGameStartedOnce, setHasGameStartedOnce] = useState(false); // Oyunun en az bir kere başlayıp başlamadığını tutar
 
     // Narrator Hareketi Kısıtlama
     const movementAnchorRef = useRef(null); // Hareketin merkezi (Başlangıç veya Işınlanma noktası)
@@ -352,6 +354,7 @@ function App() {
                 setTeleportRights(3);
                 teleportRightsRef.current = 3;
                 setIsLoading(false); // Oyun başladı, loading kapat
+                setHasGameStartedOnce(true); // Oyun başladı işareti
 
                 // Show Narrator Start Location
                 if (data.initialPositions[data.narratorId]) {
@@ -359,8 +362,8 @@ function App() {
                         lat: data.initialPositions[data.narratorId].lat,
                         lng: data.initialPositions[data.narratorId].lng
                     });
+                    setRevealTimeLeft(15);
                     setShowStartLocation(true);
-                    setTimeout(() => setShowStartLocation(false), 15000); // 15 Saniye
                 }
 
                 // Sync other players' initial positions
@@ -398,10 +401,10 @@ function App() {
                         // Biz bu noktanın EN YAKININDAKİ street view'i bulup oraya ışınlanalım.
                         const svService = new window.google.maps.StreetViewService();
 
-                        // Yarıçapı 50m'ye düşürdük (Daha isabetli olsun)
+                        // Yarıçapı 1000m yaptık (Arayıcılar anlatıcının tepesine düşmesin diye en yakın yolu geniş arıyoruz)
                         svService.getPanorama({
                             location: { lat: myData.lat, lng: myData.lng },
-                            radius: 50,
+                            radius: 1000,
                             preference: window.google.maps.StreetViewPreference.NEAREST,
                             source: window.google.maps.StreetViewSource.OUTDOOR
                         }, (panoData, status) => {
@@ -996,6 +999,75 @@ function App() {
         };
     }, []);
 
+    // --- REVEAL COUNTDOWN TIMER ---
+    useEffect(() => {
+        if (showStartLocation && revealTimeLeft > 0) {
+            const timer = setInterval(() => {
+                setRevealTimeLeft(prev => {
+                    if (prev <= 1) {
+                        setShowStartLocation(false);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+            return () => clearInterval(timer);
+        }
+    }, [showStartLocation, revealTimeLeft]);
+
+    // --- START LOCATION MAP INIT ---
+    // Anlatıcının başlangıç konumunu gösteren haritayı oluşturur
+    useEffect(() => {
+        // showStartLocation true ise ve showRoleReveal bittiyse (DOM'da ise)
+        if (showStartLocation && narratorStartPos && !showRoleReveal) {
+            console.log("📍 Start Location Effect Tetiklendi", { pos: narratorStartPos });
+
+            // DOM'un render edilmesi için kısa bir gecikme
+            const timer = setTimeout(() => {
+                const mapDiv = startLocationMapRef.current;
+
+                if (mapDiv && window.google) {
+                    console.log("🗺️ Harita OLUŞTURULUYOR...", mapDiv);
+                    try {
+                        const mapOptions = {
+                            center: narratorStartPos,
+                            zoom: 18,
+                            disableDefaultUI: true,
+                            draggable: false,
+                            zoomControl: false,
+                            scrollwheel: false,
+                            disableDoubleClickZoom: true,
+                            mapTypeId: 'satellite'
+                        };
+
+                        const map = new window.google.maps.Map(mapDiv, mapOptions);
+
+                        new window.google.maps.Marker({
+                            position: narratorStartPos,
+                            map: map,
+                            icon: {
+                                path: window.google.maps.SymbolPath.CIRCLE,
+                                scale: 10,
+                                fillColor: "#FF4444",
+                                fillOpacity: 1,
+                                strokeColor: "white",
+                                strokeWeight: 2,
+                            }
+                        });
+                        console.log("✅ Harita Başarıyla Oluşturuldu");
+                    } catch (err) {
+                        console.error("❌ Harita Hatası:", err);
+                        mapDiv.innerHTML = `<div style='color:red; padding:20px'>Harita Hatası: ${err.message}</div>`;
+                    }
+                } else {
+                    console.error("❌ Ref yok veya Google yüklü değil!", { mapDiv, google: !!window.google });
+                }
+            }, 100);
+
+            return () => clearTimeout(timer);
+        }
+    }, [showStartLocation, narratorStartPos, showRoleReveal]); // showRoleReveal değişince tekrar kontrol et
+
     // NEXT ROUND Butonu (Host tarafından çağrılır)
     // NEXT ROUND Butonu (Host tarafından çağrılır)
     const handleNextRound = () => {
@@ -1030,6 +1102,7 @@ function App() {
                 myUsername={username}
                 myColor={myColor}
                 isLoading={isLoading}
+                isIntermission={hasGameStartedOnce}
             />
         );
     }
@@ -1050,14 +1123,19 @@ function App() {
                     color: 'white',
                     fontFamily: "'Fredoka', sans-serif"
                 }}>
-                    <div style={{ fontSize: '2rem' }}>SENİN ROLÜN:</div>
+                    <div style={{ fontSize: '2rem', letterSpacing: '5px', opacity: 0.8 }}>SENİN ROLÜN</div>
                     <div style={{
-                        fontSize: '4rem',
-                        fontWeight: 'bold',
+                        fontSize: '6rem',
+                        fontWeight: '900',
                         color: role === 'narrator' ? '#FF4444' : '#00FFFF',
-                        textShadow: '0 0 20px currentColor'
+                        letterSpacing: '2px',
+                        marginTop: '20px',
+                        transform: 'scale(1.1)'
                     }}>
                         {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
+                    </div>
+                    <div style={{ marginTop: '30px', color: '#aaa', fontSize: '1rem', fontStyle: 'italic' }}>
+                        {role === 'narrator' ? '"Konumu tarif et ve bulunmasını sağla!"' : '"Anlatıcıyı dinle ve konumu bul!"'}
                     </div>
                 </div>
             )}
@@ -1071,7 +1149,10 @@ function App() {
                     transform: 'translateX(-50%)',
                     display: 'flex',
                     gap: '20px',
-                    zIndex: 1001
+                    zIndex: 1001,
+                    opacity: showRoleReveal ? 0 : 1, // CSS Gizleme
+                    pointerEvents: showRoleReveal ? 'none' : 'auto',
+                    transition: 'opacity 0.5s ease'
                 }}>
                     {/* Room Code Info */}
                     <div style={{
@@ -1139,85 +1220,89 @@ function App() {
             )}
 
             {/* MINIMAP */}
-            {isUiVisible && (
-                <div className="minimap-wrapper" style={{
-                    top: 0,
-                    left: 0,
-                    width: isMinimapMaximized ? '60vw' : 200,
-                    height: isMinimapMaximized ? '40vw' : 200, // Dikdörtgen oran
-                    borderRadius: 0,
-                    borderTop: 'none',
-                    borderLeft: 'none',
-                    borderRight: '1px solid #333',
-                    borderBottom: '1px solid #333',
-                    background: '#0a0e1a',
-                    boxShadow: isMinimapMaximized ? '0 0 50px rgba(0,0,0,0.5)' : 'none',
-                    zIndex: isMinimapMaximized ? 2000 : 10,
-                    transition: 'all 0.3s ease'
-                }}>
-                    <div key={`minimap-${roundKey}`} ref={minimapRef} className="minimap-content"></div>
-                    <div className="player-marker-ui" style={{
-                        // SVG Rotasyonu. CSS'teki transformu ezer, o yüzden translate'i de ekliyoruz.
-                        transform: `translate(-50%, -50%) rotate(${heading}deg)`
+            {
+                isUiVisible && (
+                    <div className="minimap-wrapper" style={{
+                        top: 0,
+                        left: 0,
+                        width: isMinimapMaximized ? '60vw' : 200,
+                        height: isMinimapMaximized ? '40vw' : 200, // Dikdörtgen oran
+                        borderRadius: 0,
+                        borderTop: 'none',
+                        borderLeft: 'none',
+                        borderRight: '1px solid #333',
+                        borderBottom: '1px solid #333',
+                        background: '#0a0e1a',
+                        boxShadow: isMinimapMaximized ? '0 0 50px rgba(0,0,0,0.5)' : 'none',
+                        zIndex: isMinimapMaximized ? 2000 : 10,
+                        transition: 'all 0.3s ease',
+                        opacity: showRoleReveal ? 0 : 1, // CSS Gizleme (Map instance korunsun diye)
+                        pointerEvents: showRoleReveal ? 'none' : 'auto'
                     }}>
-                        {/* Neon filtresi kaldırıldı */}
-                        <svg width="100%" height="100%" viewBox="0 0 24 24" style={{ overflow: 'visible' }}>
-                            {/* Beyaz Çerçeveli İçeren Damla - Orta Boy, Daha Yumuşak (Tatlış) */}
-                            <path
-                                d="M 12 -2 C 12 -2 20 5 20 12 A 8 8 0 1 1 4 12 C 4 5 12 -2 12 -2 Z"
-                                fill={myColor}
-                                stroke="#ffffff"
-                                strokeWidth="2"
-                                strokeLinejoin="round"
-                            />
-                        </svg>
-                    </div>
-
-                    {/* Işınlanma Hakkı Göstergesi (Sadece Maximized iken) */}
-                    {isMinimapMaximized && (
-                        <div style={{
-                            position: 'absolute',
-                            bottom: 5,
-                            left: 5,
-                            background: 'rgba(0,0,0,0.6)',
-                            color: teleportRights > 0 ? '#00ff88' : '#ff4444',
-                            padding: '5px 10px',
-                            borderRadius: '5px',
-                            fontSize: '0.8rem',
-                            fontWeight: 'bold',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            zIndex: 2002
+                        <div key={`minimap-${roundKey}`} ref={minimapRef} className="minimap-content"></div>
+                        <div className="player-marker-ui" style={{
+                            // SVG Rotasyonu. CSS'teki transformu ezer, o yüzden translate'i de ekliyoruz.
+                            transform: `translate(-50%, -50%) rotate(${heading}deg)`
                         }}>
-                            Işınlanma: {teleportRights}
+                            {/* Neon filtresi kaldırıldı */}
+                            <svg width="100%" height="100%" viewBox="0 0 24 24" style={{ overflow: 'visible' }}>
+                                {/* Beyaz Çerçeveli İçeren Damla - Orta Boy, Daha Yumuşak (Tatlış) */}
+                                <path
+                                    d="M 12 -2 C 12 -2 20 5 20 12 A 8 8 0 1 1 4 12 C 4 5 12 -2 12 -2 Z"
+                                    fill={myColor}
+                                    stroke="#ffffff"
+                                    strokeWidth="2"
+                                    strokeLinejoin="round"
+                                />
+                            </svg>
                         </div>
-                    )}
 
-                    {/* Maximize/Minimize Button */}
-                    <button
-                        onClick={() => setIsMinimapMaximized(!isMinimapMaximized)}
-                        style={{
-                            position: 'absolute',
-                            bottom: 5,
-                            right: 5,
-                            width: '30px',
-                            height: '30px',
-                            background: 'rgba(0,0,0,0.6)',
-                            color: 'white',
-                            border: '1px solid rgba(255,255,255,0.3)',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '1.2rem',
-                            zIndex: 2001
-                        }}
-                        title={isMinimapMaximized ? "Küçült" : "Büyüt"}
-                    >
-                        {isMinimapMaximized ? '↙' : '⤢'}
-                    </button>
-                </div>
-            )}
+                        {/* Işınlanma Hakkı Göstergesi (Sadece Maximized iken) */}
+                        {isMinimapMaximized && (
+                            <div style={{
+                                position: 'absolute',
+                                bottom: 5,
+                                left: 5,
+                                background: 'rgba(0,0,0,0.6)',
+                                color: teleportRights > 0 ? '#00ff88' : '#ff4444',
+                                padding: '5px 10px',
+                                borderRadius: '5px',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                zIndex: 2002
+                            }}>
+                                Işınlanma: {teleportRights}
+                            </div>
+                        )}
+
+                        {/* Maximize/Minimize Button */}
+                        <button
+                            onClick={() => setIsMinimapMaximized(!isMinimapMaximized)}
+                            style={{
+                                position: 'absolute',
+                                bottom: 5,
+                                right: 5,
+                                width: '30px',
+                                height: '30px',
+                                background: 'rgba(0,0,0,0.6)',
+                                color: 'white',
+                                border: '1px solid rgba(255,255,255,0.3)',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '1.2rem',
+                                zIndex: 2001
+                            }}
+                            title={isMinimapMaximized ? "Küçült" : "Büyüt"}
+                        >
+                            {isMinimapMaximized ? '↙' : '⤢'}
+                        </button>
+                    </div>
+                )
+            }
 
             <div key={`streetview-${roundKey}`} ref={mapRef} className="street-view">
                 {!isMapLoaded && <div style={{ color: 'white', textAlign: 'center', paddingTop: 100 }}>Yükleniyor...</div>}
@@ -1227,141 +1312,203 @@ function App() {
 
 
             {/* GAME START LOCATION REVEAL (15 SECONDS) */}
-            {isUiVisible && showStartLocation && (
-                <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: '600px',
-                    height: '400px',
-                    zIndex: 2500,
-                    background: 'rgba(0,0,0,0.8)',
-                    padding: '10px',
-                    borderRadius: '15px',
-                    boxShadow: '0 0 50px rgba(0,0,0,0.8)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center'
-                }}>
-                    <div style={{ color: 'white', fontSize: '1.5rem', marginBottom: '10px', fontWeight: 'bold' }}>
-                        ANLATICI BURADA BAŞLIYOR!
+            {
+                isUiVisible && showStartLocation && !showRoleReveal && (
+                    <div style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        width: '600px',
+                        height: '450px',
+                        zIndex: 2500,
+                        background: 'rgba(0,0,0,0.9)',
+                        padding: '20px',
+                        borderRadius: '20px',
+                        boxShadow: '0 0 70px rgba(0,0,0,0.9)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }}>
+                        {/* Close Button */}
+                        <button
+                            onClick={() => setShowStartLocation(false)}
+                            style={{
+                                position: 'absolute',
+                                top: '15px',
+                                right: '15px',
+                                background: 'rgba(255,255,255,0.1)',
+                                border: 'none',
+                                color: 'white',
+                                fontSize: '1.2rem',
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '50%',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.target.style.background = 'rgba(255,0,0,0.5)'}
+                            onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                        >
+                            ✕
+                        </button>
+
+                        <div style={{ color: 'white', fontSize: '1.5rem', marginBottom: '15px', fontWeight: 'bold', letterSpacing: '1px' }}>
+                            ANLATICI BURADA BAŞLIYOR!
+                        </div>
+
+                        {/* Map Wrapper to clip Google UI elements */}
+                        <div style={{
+                            width: '560px',
+                            height: '300px',
+                            borderRadius: '12px',
+                            overflow: 'hidden', // Magic: clip children
+                            position: 'relative',
+                            border: '1px solid rgba(255,255,255,0.2)'
+                        }}>
+                            <div
+                                ref={startLocationMapRef}
+                                style={{
+                                    width: '100%',
+                                    height: '115%', // Make taller to push footer down
+                                    marginTop: '-5px',
+                                    backgroundColor: '#111'
+                                }}
+                            >
+                                <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>Harita Yükleniyor...</div>
+                            </div>
+                        </div>
+
+                        <div style={{ color: '#00ffff', marginTop: '15px', fontSize: '1.1rem', fontWeight: '500' }}>
+                            Dikkatli bakın! <span style={{ color: '#fff', fontSize: '1.3rem', margin: '0 5px' }}>{revealTimeLeft}</span> saniye kaldı...
+                        </div>
                     </div>
-                    <div ref={startLocationMapRef} style={{ width: '100%', height: '100%', borderRadius: '10px' }}></div>
-                    <div style={{ color: '#aaa', marginTop: '5px' }}>Dikkatli bakın, 15 saniye sonra kaybolacak...</div>
-                </div>
-            )}
+                )
+            }
 
             {/* SETTINGS BUTTON - Fixed Positioning */}
-            {isUiVisible && (
-                <div style={{ position: 'absolute', bottom: 20, left: 20, zIndex: 2000 }}>
-                    <button
-                        className="settings-btn"
-                        onClick={() => setIsSettingsOpen(true)}
-                    >
-                        ⚙️ Ayarlar
-                    </button>
-                </div>
-            )}
+            {
+                isUiVisible && (
+                    <div style={{
+                        position: 'absolute', bottom: 20, left: 20, zIndex: 2000,
+                        opacity: showRoleReveal ? 0 : 1,
+                        pointerEvents: showRoleReveal ? 'none' : 'auto',
+                        transition: 'opacity 0.5s ease'
+                    }}>
+                        <button
+                            className="settings-btn"
+                            onClick={() => setIsSettingsOpen(true)}
+                        >
+                            ⚙️ Ayarlar
+                        </button>
+                    </div>
+                )
+            }
 
             {/* GAME OVER MODAL */}
-            {isUiVisible && gameOverData && (
-                <div className="lobby-container" style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)' }}>
-                    <div className="lobby-card" style={{ maxWidth: '600px', padding: '2rem' }}>
-                        <h1 className="game-title" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
-                            {gameOverData.reason === 'narrator_found' ? 'ANLATICI YAKALANDI!' : 'SÜRE DOLDU!'}
-                        </h1>
-                        <div className="game-subtitle" style={{ fontSize: '1.2rem', color: gameOverData.reason === 'narrator_found' ? '#00ff88' : '#ff4444' }}>
-                            {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
-                        </div>
-
-                        {/* KONUM BİLGİSİ */}
-                        {gameOverData.locationInfo && (
-                            <div style={{
-                                marginTop: '10px',
-                                padding: '10px',
-                                background: 'rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                textAlign: 'center'
-                            }}>
-                                <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
-                                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
-                                    {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
-                                </div>
+            {
+                isUiVisible && gameOverData && (
+                    <div className="lobby-container" style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)' }}>
+                        <div className="lobby-card" style={{ maxWidth: '600px', padding: '2rem' }}>
+                            <h1 className="game-title" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
+                                {gameOverData.reason === 'narrator_found' ? 'ANLATICI YAKALANDI!' : 'SÜRE DOLDU!'}
+                            </h1>
+                            <div className="game-subtitle" style={{ fontSize: '1.2rem', color: gameOverData.reason === 'narrator_found' ? '#00ff88' : '#ff4444' }}>
+                                {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
                             </div>
-                        )}
 
-                        <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {/* ANLATICI BÖLÜMÜ */}
-                            <div>
-                                <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
-                                    ANLATICI
-                                </div>
-                                {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
-                                    <div key={`narrator-${i}`} style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        padding: '10px',
-                                        background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                        marginBottom: '5px',
-                                        borderRadius: '5px',
-                                        border: s.isWinner ? '1px solid #00ff88' : 'none'
-                                    }}>
-                                        <div style={{ display: 'flex', gap: '10px' }}>
-                                            <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
-                                        </div>
-                                        <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
+                            {/* KONUM BİLGİSİ */}
+                            {gameOverData.locationInfo && (
+                                <div style={{
+                                    marginTop: '10px',
+                                    padding: '10px',
+                                    background: 'rgba(255,255,255,0.1)',
+                                    borderRadius: '8px',
+                                    textAlign: 'center'
+                                }}>
+                                    <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
+                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
+                                        {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
                                     </div>
-                                ))}
-                            </div>
-
-                            {/* ARAYICILAR BÖLÜMÜ */}
-                            <div>
-                                <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
-                                    ARAYICILAR
                                 </div>
-                                {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
-                                    <div key={`seeker-${i}`} style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        padding: '10px',
-                                        background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                        marginBottom: '5px',
-                                        borderRadius: '5px',
-                                        border: s.isWinner ? '1px solid #00ff88' : 'none'
-                                    }}>
-                                        <div style={{ display: 'flex', gap: '10px' }}>
-                                            <span style={{ color: '#aaa' }}>#{i + 1}</span>
-                                            <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
-                                        </div>
-                                        <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                            )}
 
-                        {(isCreator || gameOverData.isFinalGameEnd) && (
-                            <button
-                                className="join-btn"
-                                onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
-                                style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
-                            >
-                                {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
-                            </button>
-                        )}
-                        {!isCreator && !gameOverData.isFinalGameEnd && (
-                            <div style={{ color: '#aaa', marginTop: '10px' }}>
-                                Oda kurucusunun yeni turu başlatması bekleniyor...
+                            <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                {/* ANLATICI BÖLÜMÜ */}
+                                <div>
+                                    <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
+                                        ANLATICI
+                                    </div>
+                                    {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
+                                        <div key={`narrator-${i}`} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            padding: '10px',
+                                            background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                            marginBottom: '5px',
+                                            borderRadius: '5px',
+                                            border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                        }}>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                            </div>
+                                            <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* ARAYICILAR BÖLÜMÜ */}
+                                <div>
+                                    <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
+                                        ARAYICILAR
+                                    </div>
+                                    {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
+                                        <div key={`seeker-${i}`} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            padding: '10px',
+                                            background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                            marginBottom: '5px',
+                                            borderRadius: '5px',
+                                            border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                        }}>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <span style={{ color: '#aaa' }}>#{i + 1}</span>
+                                                <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                            </div>
+                                            <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        )}
-                        {gameOverData.isFinalGameEnd && (
-                            <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
-                                🏆 Herkes anlatıcı görevini tamamladı!
-                            </div>
-                        )}
+
+                            {(isCreator || gameOverData.isFinalGameEnd) && (
+                                <button
+                                    className="join-btn"
+                                    onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
+                                    style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
+                                >
+                                    {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
+                                </button>
+                            )}
+                            {!isCreator && !gameOverData.isFinalGameEnd && (
+                                <div style={{ color: '#aaa', marginTop: '10px' }}>
+                                    Oda kurucusunun yeni turu başlatması bekleniyor...
+                                </div>
+                            )}
+                            {gameOverData.isFinalGameEnd && (
+                                <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
+                                    🏆 Herkes anlatıcı görevini tamamladı!
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
 
 
@@ -1409,105 +1556,107 @@ function App() {
             }
 
             {/* DEVELOPER CONTROL PANEL (F8) */}
-            {DEV_MODE && isDevPanelOpen && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0,
-                    right: 0,
-                    width: '300px',
-                    height: '100vh',
-                    background: 'rgba(0, 0, 0, 0.9)',
-                    borderLeft: '2px solid #00ff88',
-                    padding: '20px',
-                    zIndex: 100000,
-                    overflowY: 'auto',
-                    fontFamily: 'monospace',
-                    color: '#00ff88',
-                    boxShadow: '-5px 0 15px rgba(0,0,0,0.5)'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-                        <h2 style={{ margin: 0, fontSize: '1.2rem' }}>DEV TOOLS</h2>
-                        <button onClick={() => setIsDevPanelOpen(false)} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1.2rem' }}>X</button>
-                    </div>
+            {
+                DEV_MODE && isDevPanelOpen && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        right: 0,
+                        width: '300px',
+                        height: '100vh',
+                        background: 'rgba(0, 0, 0, 0.9)',
+                        borderLeft: '2px solid #00ff88',
+                        padding: '20px',
+                        zIndex: 100000,
+                        overflowY: 'auto',
+                        fontFamily: 'monospace',
+                        color: '#00ff88',
+                        boxShadow: '-5px 0 15px rgba(0,0,0,0.5)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+                            <h2 style={{ margin: 0, fontSize: '1.2rem' }}>DEV TOOLS</h2>
+                            <button onClick={() => setIsDevPanelOpen(false)} style={{ background: 'transparent', border: 'none', color: '#ff4444', cursor: 'pointer', fontSize: '1.2rem' }}>X</button>
+                        </div>
 
-                    {/* STATE CONTROLS */}
-                    <div className="dev-section" style={{ marginBottom: '20px' }}>
-                        <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>GAME STATE</h3>
-                        <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                            <button onClick={() => setUiMode(uiMode === 'game' ? 'waiting' : 'game')} style={devButtonStyle}>
-                                Toggle Mode: {uiMode.toUpperCase()}
-                            </button>
-                            <button onClick={() => setRole(role === 'narrator' ? 'seeker' : 'narrator')} style={devButtonStyle}>
-                                Toggle Role: {role ? role.toUpperCase() : 'NONE'}
-                            </button>
+                        {/* STATE CONTROLS */}
+                        <div className="dev-section" style={{ marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>GAME STATE</h3>
+                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                <button onClick={() => setUiMode(uiMode === 'game' ? 'waiting' : 'game')} style={devButtonStyle}>
+                                    Toggle Mode: {uiMode.toUpperCase()}
+                                </button>
+                                <button onClick={() => setRole(role === 'narrator' ? 'seeker' : 'narrator')} style={devButtonStyle}>
+                                    Toggle Role: {role ? role.toUpperCase() : 'NONE'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* UI OVERLAYS */}
+                        <div className="dev-section" style={{ marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>UI OVERLAYS</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <button onClick={() => setShowRoleReveal(!showRoleReveal)} style={devButtonStyle}>
+                                    Toggle Role Reveal ({showRoleReveal ? 'ON' : 'OFF'})
+                                </button>
+                                <button onClick={() => setShowStartLocation(!showStartLocation)} style={devButtonStyle}>
+                                    Toggle Start Map ({showStartLocation ? 'ON' : 'OFF'})
+                                </button>
+                                <button onClick={() => {
+                                    if (gameOverData) setGameOverData(null);
+                                    else setGameOverData({ reason: 'narrator_found', scores: [{ username: 'DevBot', score: 999, isWinner: true, role: 'narrator' }] });
+                                }} style={devButtonStyle}>
+                                    Toggle Game Over Screen
+                                </button>
+                                <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} style={devButtonStyle}>
+                                    Toggle Settings Panel
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* ACTIONS */}
+                        <div className="dev-section" style={{ marginBottom: '20px' }}>
+                            <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>ACTIONS & BOTS</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <button onClick={() => {
+                                    const lat = 41.0082 + (Math.random() - 0.5) * 0.05;
+                                    const lng = 28.9784 + (Math.random() - 0.5) * 0.05;
+                                    setPosition({ lat, lng });
+                                    if (panoramaRef.current) panoramaRef.current.setPosition({ lat, lng });
+                                }} style={devButtonStyle}>
+                                    Teleport Random (Istanbul)
+                                </button>
+
+                                <button onClick={() => {
+                                    const id = 'bot_' + Math.random().toString(36).substr(2, 5);
+                                    const lat = position.lat + (Math.random() - 0.5) * 0.002;
+                                    const lng = position.lng + (Math.random() - 0.5) * 0.002;
+                                    const bot = {
+                                        playerId: id,
+                                        username: 'Bot_' + Math.floor(Math.random() * 100),
+                                        lat, lng,
+                                        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+                                        role: Math.random() > 0.5 ? 'narrator' : 'seeker'
+                                    };
+                                    setOtherPlayers(prev => {
+                                        const next = new Map(prev);
+                                        next.set(id, bot);
+                                        return next;
+                                    });
+                                }} style={devButtonStyle}>
+                                    Add Dummy Bot (Nearby)
+                                </button>
+
+                                <button onClick={() => setOtherPlayers(new Map())} style={{ ...devButtonStyle, background: '#5e0000', borderColor: '#ff4444' }}>
+                                    Clear All Bots
+                                </button>
+                            </div>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#666', marginTop: 'auto' }}>
+                            Press F8 to Toggle
                         </div>
                     </div>
-
-                    {/* UI OVERLAYS */}
-                    <div className="dev-section" style={{ marginBottom: '20px' }}>
-                        <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>UI OVERLAYS</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <button onClick={() => setShowRoleReveal(!showRoleReveal)} style={devButtonStyle}>
-                                Toggle Role Reveal ({showRoleReveal ? 'ON' : 'OFF'})
-                            </button>
-                            <button onClick={() => setShowStartLocation(!showStartLocation)} style={devButtonStyle}>
-                                Toggle Start Map ({showStartLocation ? 'ON' : 'OFF'})
-                            </button>
-                            <button onClick={() => {
-                                if (gameOverData) setGameOverData(null);
-                                else setGameOverData({ reason: 'narrator_found', scores: [{ username: 'DevBot', score: 999, isWinner: true, role: 'narrator' }] });
-                            }} style={devButtonStyle}>
-                                Toggle Game Over Screen
-                            </button>
-                            <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} style={devButtonStyle}>
-                                Toggle Settings Panel
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* ACTIONS */}
-                    <div className="dev-section" style={{ marginBottom: '20px' }}>
-                        <h3 style={{ fontSize: '1rem', color: 'white', marginBottom: '10px' }}>ACTIONS & BOTS</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                            <button onClick={() => {
-                                const lat = 41.0082 + (Math.random() - 0.5) * 0.05;
-                                const lng = 28.9784 + (Math.random() - 0.5) * 0.05;
-                                setPosition({ lat, lng });
-                                if (panoramaRef.current) panoramaRef.current.setPosition({ lat, lng });
-                            }} style={devButtonStyle}>
-                                Teleport Random (Istanbul)
-                            </button>
-
-                            <button onClick={() => {
-                                const id = 'bot_' + Math.random().toString(36).substr(2, 5);
-                                const lat = position.lat + (Math.random() - 0.5) * 0.002;
-                                const lng = position.lng + (Math.random() - 0.5) * 0.002;
-                                const bot = {
-                                    playerId: id,
-                                    username: 'Bot_' + Math.floor(Math.random() * 100),
-                                    lat, lng,
-                                    color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-                                    role: Math.random() > 0.5 ? 'narrator' : 'seeker'
-                                };
-                                setOtherPlayers(prev => {
-                                    const next = new Map(prev);
-                                    next.set(id, bot);
-                                    return next;
-                                });
-                            }} style={devButtonStyle}>
-                                Add Dummy Bot (Nearby)
-                            </button>
-
-                            <button onClick={() => setOtherPlayers(new Map())} style={{ ...devButtonStyle, background: '#5e0000', borderColor: '#ff4444' }}>
-                                Clear All Bots
-                            </button>
-                        </div>
-                    </div>
-                    <div style={{ fontSize: '0.8rem', color: '#666', marginTop: 'auto' }}>
-                        Press F8 to Toggle
-                    </div>
-                </div>
-            )}
+                )
+            }
         </div >
     );
 }

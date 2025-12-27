@@ -180,7 +180,7 @@ io.on('connection', (socket) => {
           p.lng = narratorLocation.lng;
         } else {
           p.role = 'seeker';
-          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, 150, 300);
+          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, 250, 500);
           p.lat = spawn.lat;
           p.lng = spawn.lng;
         }
@@ -199,7 +199,10 @@ io.on('connection', (socket) => {
       room.narratorLocation = narratorLocation;
       room.locationInfo = locationInfo;
       room.isEnding = false;
+      room.locationInfo = locationInfo;
+      room.isEnding = false;
       room.active = true;
+      room.finders = new Set(); // Reset finders list
 
       // D. Başlangıç Verisini Gönder
       console.log(`🚀 [SERVER] 'game-started' eventi gönderiliyor...`);
@@ -218,21 +221,32 @@ io.on('connection', (socket) => {
   // 6. Anlatıcı Bulundu (Win Condition)
   socket.on('found-narrator', ({ roomId, finderId }) => {
     const room = rooms.get(roomId);
-    if (!room || room.isEnding) return;
+    if (!room) return;
 
-    // 30 saniye sonra bitecek şekilde güncelle (Kullanıcı isteği: 30sn -> 5sn)
-    const now = Date.now();
-    room.endTime = now + 3000;
-    room.isEnding = true;
-    room.finderId = finderId; // Kimin bulduğunu kaydet
+    // Eğer zaten bulunduysa listeye ekle, yoksa yeni başlat
+    if (!room.finders) room.finders = new Set();
 
-    // Herkese duyur (5 saniye başladı)
-    io.to(roomId).emit('narrator-found', {
-      newEndTime: room.endTime,
-      finderId: finderId
-    });
+    // Zaten bulduysa işlem yapma
+    if (room.finders.has(finderId)) return;
 
-    console.log(`🎯 [SERVER] Anlatıcı bulundu! 5sn başladı. Oda: ${roomId}`);
+    room.finders.add(finderId);
+
+    // EĞER İLK BULAN KİŞİYSE -> Sayacı Başlat
+    if (!room.isEnding) {
+      const now = Date.now();
+      room.endTime = now + 30000; // 30 Saniye "Bitiş Penceresi"
+      room.isEnding = true;
+      room.firstFinderId = finderId; // İlk bulanı kaydet (Bonus için)
+
+      // Herkese duyur (30 saniye başladı)
+      io.to(roomId).emit('narrator-found', {
+        newEndTime: room.endTime,
+        finderId: finderId
+      });
+      console.log(`🎯 [SERVER] Anlatıcı bulundu! 30sn başladı. Oda: ${roomId} | Bulanlar: ${room.finders.size}`);
+    } else {
+      console.log(`🎯 [SERVER] Anlatıcı bir kişi daha tarafından bulundu! (${finderId}) Toplam: ${room.finders.size}`);
+    }
   });
 
   // 8. Süre Doldu (Server Kontrolü veya Client Tetiklemesi)
@@ -249,31 +263,71 @@ io.on('connection', (socket) => {
     let reason = 'time_up';
     let winnerId = null;
 
-    if (room.isEnding && room.finderId) {
-      // Birisi anlatıcıyı buldu ve 30 saniye doldu
+    // PUANLAMA LOGIC V4 (Multi-Finder & Balanced Narrator)
+    const narratorLoc = room.narratorLocation;
+    const finders = room.finders || new Set();
+
+    if (room.isEnding && finders.size > 0) {
+      // --- SENARYO 1: ANLATICI YAKALANDI ---
       reason = 'narrator_found';
-      winnerId = room.finderId;
+      winnerId = room.firstFinderId; // UI için ilk bulanı göster
 
       roomPlayers.forEach(([id, p]) => {
         let score = 0;
-        if (id === room.finderId) score += 100;
-        if (p.role === 'seeker' && id !== room.finderId) score += 50;
-        if (p.role === 'narrator') score += 10;
+
+        // 1. ANLATICI PUANI
+        if (p.role === 'narrator') {
+          // Formül: 50 + (BulanSayısı * 25)
+          score = 50 + (finders.size * 25);
+        }
+        // 2. ARAYICILAR
+        else if (p.role === 'seeker') {
+          // A) Bulanlar
+          if (finders.has(id)) {
+            if (id === room.firstFinderId) {
+              score = 150; // İlk bulan (Büyük ödül)
+            } else {
+              score = 100; // Sonradan bulan (Standart ödül)
+            }
+          }
+          // B) Bulamayanlar
+          else {
+            const dist = getDistance(p.lat, p.lng, narratorLoc.lat, narratorLoc.lng);
+            const distScore = Math.max(0, 100 - (dist / 10)); // Mesafe puanı
+            score = Math.floor(distScore);
+          }
+        }
+
         p.totalScore = (p.totalScore || 0) + score;
-        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: id === room.finderId });
+        scores.push({
+          username: p.username,
+          score: p.totalScore,
+          role: p.role,
+          isWinner: finders.has(id) // UI'da kazanan olarak işaretle
+        });
       });
+
     } else {
-      // Kimse bulamadı, süre doldu
+      // --- SENARYO 2: SÜRE BİTTİ (KİMSE BULAMADI) ---
       reason = 'time_up';
+
       roomPlayers.forEach(([id, p]) => {
         let score = 0;
+
+        // Anlatıcı: Bulduramadığı için puan ALAMAZ (veya cezalandırılabilir)
         if (p.role === 'narrator') {
-          score += 200;
-          winnerId = id;
+          score = 0;
         }
-        if (p.role === 'seeker') score += 10;
+        // Arayıcılar: Yine de yaklaştıkları için TESELLİ puanı alırlar
+        else if (p.role === 'seeker') {
+          const dist = getDistance(p.lat, p.lng, narratorLoc.lat, narratorLoc.lng);
+          const distScore = Math.max(0, 100 - (dist / 10));
+          score = Math.floor(distScore);
+        }
+
         p.totalScore = (p.totalScore || 0) + score;
-        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: p.role === 'narrator' });
+        // Süre bittiyse teknik olarak kimse "kazanmadı" ama en yüksek puan alan öne çıkar
+        scores.push({ username: p.username, score: p.totalScore, role: p.role, isWinner: false });
       });
     }
 
@@ -337,3 +391,20 @@ app.use((req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Server çalışıyor: http://localhost:${PORT}`);
 });
+
+// Helper: Mesafe Hesaplama (Metre cinsinden)
+function getDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
