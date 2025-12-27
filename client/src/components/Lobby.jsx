@@ -1,5 +1,75 @@
-import { useState } from 'react';
-import '../App.css'; // Re-use global styles
+import { useState, useEffect, useRef } from 'react';
+import '../App.css';
+
+// Dönen Street View Arka Plan Bileşeni
+const StreetViewBackground = () => {
+    const bgRef = useRef(null);
+
+    useEffect(() => {
+        if (!window.google || !window.google.maps) return;
+
+        // Çeşitli İlgi Çekici Lokasyonlar
+        const LOCATIONS = [
+            { lat: 41.025636, lng: 28.974223 }, // Istanbul Galata
+            { lat: 40.758896, lng: -73.985130 }, // New York Times Square
+            { lat: 48.858370, lng: 2.294481 },   // Paris Eiffel
+            { lat: 35.659456, lng: 139.700547 }, // Tokyo Shibuya
+            { lat: 51.500729, lng: -0.124625 },  // London Big Ben
+            { lat: 41.890210, lng: 12.492231 },  // Rome Colosseum
+            { lat: -33.856784, lng: 151.215297 }, // Sydney Opera House
+            { lat: 38.643033, lng: 34.828859 }   // Cappadocia
+        ];
+
+        // Rastgele bir lokasyon seç
+        const randomLoc = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+
+        const panorama = new window.google.maps.StreetViewPanorama(bgRef.current, {
+            position: randomLoc,
+            pov: { heading: 0, pitch: 10 },
+            zoom: 1,
+            disableDefaultUI: true,
+            showRoadLabels: false,
+            clickToGo: false,
+            scrollwheel: false,
+            disableDoubleClickZoom: true,
+            linksControl: false,
+            panControl: false,
+            enableCloseButton: false
+        });
+
+        let heading = 0;
+        let animationFrameId;
+
+        const animate = () => {
+            heading = (heading + 0.1) % 360;
+            panorama.setPov({ heading: heading, pitch: 10 });
+            animationFrameId = requestAnimationFrame(animate);
+        };
+
+        animate();
+
+        return () => {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        };
+    }, []);
+
+    return (
+        <div
+            ref={bgRef}
+            className="lobby-bg"
+            style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: -1,
+                filter: 'brightness(0.5)', // Metin okunabilirliği için karartma
+                pointerEvents: 'none'
+            }}
+        />
+    );
+};
 
 function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission }) {
     const [username, setUsername] = useState('');
@@ -66,6 +136,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         </div>
                     )}
                 </div>
+                <StreetViewBackground />
             </div>
         );
     }
@@ -149,7 +220,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         </div>
                     )}
                 </div>
-                <div className="lobby-bg"></div>
+                <StreetViewBackground />
             </div>
         );
     }
@@ -208,16 +279,16 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
                             maxLength={4}
                             style={{
-                                flex: '0 0 50px', // Maksimum kısalığa getirdim (50px)
+                                flex: '0 0 50px',
                                 width: 'auto',
-                                padding: '15px 2px', // Minimum yatay padding
+                                padding: '15px 2px',
                                 background: 'rgba(0,0,0,0.3)',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: '10px',
                                 color: 'white',
                                 textAlign: 'center',
-                                fontSize: '0.9rem', // Daha küçük font
-                                letterSpacing: '0px', // Harf arasını kapattım
+                                fontSize: '0.9rem',
+                                letterSpacing: '0px',
                                 textTransform: 'uppercase',
                                 boxSizing: 'border-box'
                             }}
@@ -227,7 +298,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             className="join-btn"
                             disabled={isThinking}
                             style={{
-                                flex: 1, // Kalan alanı doldur
+                                flex: 1,
                                 background: '#00ff88',
                                 boxSizing: 'border-box'
                             }}
@@ -243,7 +314,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                 </div>
             </div>
 
-            <div className="lobby-bg"></div>
+            <StreetViewBackground />
         </div>
     );
 }
