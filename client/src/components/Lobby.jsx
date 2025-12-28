@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ACCESSORIES_CONFIG } from '../data/accessories';
 import '../App.css';
 
 // Dönen Street View Arka Plan Bileşeni
@@ -442,11 +443,12 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
     );
 };
 
-function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission, onLeave, gameMode, setGameMode, customLocations, setCustomLocations, spawnDistance, setSpawnDistance }) {
+function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission, onLeave, gameMode, setGameMode, customLocations, setCustomLocations, spawnDistance, setSpawnDistance, myAvatar, setMyAvatar, myAccessories, setMyAccessories }) {
     const [username, setUsername] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [isThinking, setIsThinking] = useState(false);
     const [isCustomPanelOpen, setIsCustomPanelOpen] = useState(false); // Panel görünürlüğü
+    const [isAvatarPanelOpen, setIsAvatarPanelOpen] = useState(false); // Karakter seçim paneli
 
     // CUSTOM moduna geçildiğinde paneli otomatik aç
     useEffect(() => {
@@ -957,6 +959,35 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         />
                     </div>
 
+                    {/* Karakter Özelleştir Butonu - Sağ Üst */}
+                    <div style={{
+                        position: 'absolute',
+                        top: '20px',
+                        right: '20px'
+                    }}>
+                        <button
+                            onClick={() => setIsAvatarPanelOpen(true)}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '10px 15px',
+                                background: 'rgba(199, 206, 234, 0.2)',
+                                border: '1px solid rgba(199, 206, 234, 0.4)',
+                                borderRadius: '30px',
+                                color: '#C7CEEA',
+                                cursor: 'pointer',
+                                fontSize: '0.85rem',
+                                fontWeight: 'bold',
+                                backdropFilter: 'blur(10px)',
+                                transition: 'all 0.3s'
+                            }}
+                        >
+                            <img src={myAvatar === 'char2' ? '/char_2.png' : '/char_1.png'} alt="Avatar" style={{ height: '30px' }} />
+                            Özelleştir
+                        </button>
+                    </div>
+
                     {/* ODA KUR */}
                     <button
                         onClick={handleCreate}
@@ -1137,6 +1168,290 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                     setCustomLocations={setCustomLocations}
                     onClose={() => setIsCustomPanelOpen(false)}
                 />
+            )}
+
+            {/* KARAKTER SEÇİM PANELİ */}
+            {isAvatarPanelOpen && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'rgba(0, 0, 0, 0.85)',
+                    backdropFilter: 'blur(10px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2000,
+                    animation: 'fadeIn 0.3s ease-out'
+                }} onClick={() => setIsAvatarPanelOpen(false)}>
+                    <div style={{
+                        background: 'rgba(20, 20, 30, 0.98)',
+                        border: '1px solid rgba(199, 206, 234, 0.4)',
+                        borderRadius: '30px',
+                        padding: '40px',
+                        maxWidth: '650px',
+                        width: '95%',
+                        boxShadow: '0 0 80px rgba(0,0,0,0.9)',
+                        animation: 'zoomIn 0.3s ease-out'
+                    }} onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+                            <h2 style={{ color: '#C7CEEA', margin: 0, fontSize: '1.8rem' }}>Karakterini Özelleştir</h2>
+                            <button
+                                onClick={() => setIsAvatarPanelOpen(false)}
+                                style={{
+                                    background: 'rgba(255,255,255,0.1)',
+                                    border: 'none',
+                                    color: '#fff',
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '50%',
+                                    fontSize: '1.4rem',
+                                    cursor: 'pointer'
+                                }}
+                            >×</button>
+                        </div>
+
+                        {/* Ana İçerik: Sol Seçenekler + Sağ Önizleme */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'stretch',
+                            gap: '40px',
+                            marginBottom: '30px'
+                        }}>
+                            {/* Sol: Seçenekler */}
+                            <div style={{ flex: 1 }}>
+                                {/* Karakter Poz Seçimi - Ok ile geçiş */}
+                                <div style={{ marginBottom: '25px' }}>
+                                    <div style={{ color: '#888', fontSize: '0.9rem', marginBottom: '12px' }}>Pose</div>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '10px'
+                                    }}>
+                                        {/* Sol Ok */}
+                                        <button
+                                            onClick={() => {
+                                                const options = ['char1', 'char2', 'char3'];
+                                                const currentIndex = options.indexOf(myAvatar || 'char1');
+                                                const prevIndex = currentIndex <= 0 ? options.length - 1 : currentIndex - 1;
+                                                setMyAvatar && setMyAvatar(options[prevIndex]);
+                                            }}
+                                            style={{
+                                                width: '36px',
+                                                height: '36px',
+                                                borderRadius: '50%',
+                                                border: '1px solid rgba(255,255,255,0.2)',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                color: '#fff',
+                                                fontSize: '1.2rem',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                        >◀</button>
+
+                                        {/* Mevcut Seçim - Sayı olarak göster */}
+                                        <div style={{
+                                            flex: 1,
+                                            padding: '12px',
+                                            borderRadius: '12px',
+                                            background: 'rgba(255,255,255,0.05)',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            textAlign: 'center',
+                                            minHeight: '40px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}>
+                                            <span style={{ color: '#C7CEEA', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                                                {['char1', 'char2', 'char3'].indexOf(myAvatar || 'char1') + 1}
+                                            </span>
+                                        </div>
+
+                                        {/* Sağ Ok */}
+                                        <button
+                                            onClick={() => {
+                                                const options = ['char1', 'char2', 'char3'];
+                                                const currentIndex = options.indexOf(myAvatar || 'char1');
+                                                const nextIndex = (currentIndex + 1) % options.length;
+                                                setMyAvatar && setMyAvatar(options[nextIndex]);
+                                            }}
+                                            style={{
+                                                width: '36px',
+                                                height: '36px',
+                                                borderRadius: '50%',
+                                                border: '1px solid rgba(255,255,255,0.2)',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                color: '#fff',
+                                                fontSize: '1.2rem',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}
+                                        >▶</button>
+                                    </div>
+                                </div>
+
+                                {/* AKSESUAR KATEGORİ SEÇİMLERİ (Dinamik) */}
+                                {Object.entries(ACCESSORIES_CONFIG).map(([category, options]) => (
+                                    <div key={category} style={{ marginBottom: '20px' }}>
+                                        <div style={{ color: '#888', fontSize: '0.9rem', marginBottom: '10px', textTransform: 'capitalize' }}>
+                                            {category === 'hairs' ? 'Saç' : category === 'glasses' ? 'Gözlük' : category}
+                                        </div>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px'
+                                        }}>
+                                            {/* Sol Ok */}
+                                            <button
+                                                onClick={() => {
+                                                    const currentIndex = options.indexOf(myAccessories?.[category]);
+                                                    const prevIndex = currentIndex <= 0 ? options.length - 1 : currentIndex - 1;
+                                                    setMyAccessories && setMyAccessories({ ...myAccessories, [category]: options[prevIndex] });
+                                                }}
+                                                style={{
+                                                    width: '36px',
+                                                    height: '36px',
+                                                    borderRadius: '50%',
+                                                    border: '1px solid rgba(255,255,255,0.2)',
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    color: '#fff',
+                                                    fontSize: '1.2rem',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >◀</button>
+
+                                            {/* Mevcut Seçim - Sayı olarak göster */}
+                                            <div style={{
+                                                flex: 1,
+                                                padding: '12px',
+                                                borderRadius: '12px',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                textAlign: 'center',
+                                                minHeight: '40px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}>
+                                                <span style={{ color: '#C7CEEA', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                                                    {options.indexOf(myAccessories?.[category])}
+                                                </span>
+                                            </div>
+
+                                            {/* Sağ Ok */}
+                                            <button
+                                                onClick={() => {
+                                                    const currentIndex = options.indexOf(myAccessories?.[category]);
+                                                    const nextIndex = (currentIndex + 1) % options.length;
+                                                    setMyAccessories && setMyAccessories({ ...myAccessories, [category]: options[nextIndex] });
+                                                }}
+                                                style={{
+                                                    width: '36px',
+                                                    height: '36px',
+                                                    borderRadius: '50%',
+                                                    border: '1px solid rgba(255,255,255,0.2)',
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    color: '#fff',
+                                                    fontSize: '1.2rem',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >▶</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Sağ: Karakter Önizleme (Büyük) */}
+                            <div style={{
+                                flex: 1.2,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '30px',
+                                background: 'rgba(255,255,255,0.03)',
+                                borderRadius: '25px',
+                                border: `2px solid ${myAvatar === 'char2' ? 'rgba(255, 154, 162, 0.4)' : myAvatar === 'char3' ? 'rgba(181, 234, 215, 0.4)' : 'rgba(199, 206, 234, 0.4)'}`,
+                                transition: 'all 0.3s',
+                                position: 'relative',
+                                minHeight: '280px'
+                            }}>
+                                {/* Base Karakter */}
+                                <div style={{ position: 'relative' }}>
+                                    <img
+                                        src={`/char_${myAvatar?.replace('char', '') || '1'}.png`}
+                                        alt="Karakter"
+                                        style={{
+                                            height: '220px',
+                                            transition: 'all 0.3s',
+                                            filter: `drop-shadow(0 0 30px ${myAvatar === 'char2' ? 'rgba(255, 154, 162, 0.6)' : myAvatar === 'char3' ? 'rgba(181, 234, 215, 0.6)' : 'rgba(199, 206, 234, 0.6)'})`
+                                        }}
+                                    />
+                                    {/* Aksesuar Overlay'leri (Dinamik Katmanlama) */}
+                                    {Object.keys(ACCESSORIES_CONFIG).map(category => {
+                                        const accKey = myAccessories?.[category];
+                                        if (!accKey) return null;
+                                        return (
+                                            <img
+                                                key={category}
+                                                src={`/accessories/${accKey}.png`}
+                                                alt={category}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 0,
+                                                    left: 0,
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'contain',
+                                                    pointerEvents: 'none'
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                                <div style={{
+                                    marginTop: '20px',
+                                    color: myAvatar === 'char2' ? '#FF9AA2' : myAvatar === 'char3' ? '#B5EAD7' : '#C7CEEA',
+                                    fontSize: '1.2rem',
+                                    fontWeight: 'bold'
+                                }}>
+                                    Poz {myAvatar?.replace('char', '') || '1'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Kapat Butonu */}
+                        <button
+                            onClick={() => setIsAvatarPanelOpen(false)}
+                            style={{
+                                width: '100%',
+                                padding: '16px',
+                                background: 'linear-gradient(to right, #B5EAD7, #C7CEEA)',
+                                border: 'none',
+                                borderRadius: '15px',
+                                color: '#000',
+                                fontSize: '1.1rem',
+                                fontWeight: 'bold',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            TAMAM
+                        </button>
+                    </div>
+                </div>
             )}
         </div>
     );

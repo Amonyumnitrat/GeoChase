@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import Lobby from './components/Lobby';
 import LandingPage from './components/LandingPage';
 import { CAPITALS_LIST } from './data/capitals';
+import { ACCESSORIES_CONFIG } from './data/accessories';
 import './App.css';
 
 function App() {
@@ -54,6 +55,8 @@ function App() {
     const [hasVotedToEnd, setHasVotedToEnd] = useState(false); // Kullanıcı oy verdi mi
     const [showReturnConfirm, setShowReturnConfirm] = useState(false); // Lobiye dönüş onayı
     const [errorMsg, setErrorMsg] = useState(null); // Merkezi hata mesajı
+    const [myAvatar, setMyAvatar] = useState('char1'); // 'char1' | 'char2' - Karakter seçimi
+    const [myAccessories, setMyAccessories] = useState({}); // { glasses: 'glasses_ski', hats: null, ... }
 
     // Narrator Hareketi Kısıtlama
     const movementAnchorRef = useRef(null); // Hareketin merkezi (Başlangıç veya Işınlanma noktası)
@@ -123,17 +126,40 @@ function App() {
         return R * c;
     };
 
-    // Global Avatar Cache
-    const avatarImgRef = useRef(null);
+    // Global Avatar Cache - Karakter pozları için
+    const avatarImgRef = useRef({ char1: null, char2: null, char3: null });
+    const accessoryImgRef = useRef({}); // Dinamik obje
 
     useEffect(() => {
-        const img = new Image();
-        img.src = "/avatar.png";
-        img.onload = () => { avatarImgRef.current = img; };
+        // Poz 1 avatar
+        const char1Img = new Image();
+        char1Img.src = "/char_1.png";
+        char1Img.onload = () => { avatarImgRef.current.char1 = char1Img; };
+
+        // Poz 2 avatar
+        const char2Img = new Image();
+        char2Img.src = "/char_2.png";
+        char2Img.onload = () => { avatarImgRef.current.char2 = char2Img; };
+
+        // Poz 3 avatar
+        const char3Img = new Image();
+        char3Img.src = "/char_3.png";
+        char3Img.onload = () => { avatarImgRef.current.char3 = char3Img; };
+
+        // Aksesuarları Dinamik Yükle
+        Object.values(ACCESSORIES_CONFIG).forEach(category => {
+            category.forEach(opt => {
+                if (opt) {
+                    const img = new Image();
+                    img.src = `/accessories/${opt}.png`;
+                    img.onload = () => { accessoryImgRef.current[opt] = img; };
+                }
+            });
+        });
     }, []);
 
-    // Helper: Canvas ile Dinamik İkon (Resim + İsim Birleşik)
-    const getDynamicAvatar = (distance, username, color) => {
+    // Helper: Canvas ile Dinamik İkon (Resim + İsim + Aksesuarlar Birleşik)
+    const getDynamicAvatar = (distance, username, color, avatarType = 'char1', accessories = {}) => {
         // 1. Scale Hesapla
         let distScale = 2000 / Math.pow(Math.max(10, distance), 2.0);
         distScale = Math.min(Math.max(distScale, 0.4), 3.0);
@@ -160,14 +186,24 @@ function App() {
         const ctx = canvas.getContext('2d');
 
         // 1. Resmi Çiz (Alt kısma)
-        if (avatarImgRef.current) {
-            // Resmi canvas'ın alt ortasına yerleştir
-            const x = (canvasW - targetW) / 2;
-            const y = textHeight; // Üstte metin boşluğu bıraktık
-            ctx.drawImage(avatarImgRef.current, x, y, targetW, targetH);
+        const avatarImg = avatarImgRef.current[avatarType] || avatarImgRef.current.char1;
+        const avatarX = (canvasW - targetW) / 2;
+        const avatarY = textHeight; // Üstte metin boşluğu bıraktık
+        if (avatarImg) {
+            ctx.drawImage(avatarImg, avatarX, avatarY, targetW, targetH);
         }
 
-        // 2. Metni Çiz (Üst kısma)
+        // 2. Aksesuarları Çiz (Dinamik Katmanlama)
+        Object.keys(ACCESSORIES_CONFIG).forEach(category => {
+            const accessoryKey = accessories[category];
+            if (accessoryKey && accessoryImgRef.current[accessoryKey]) {
+                const accImg = accessoryImgRef.current[accessoryKey];
+                // Aksesuar görseli karakterle aynı boyut ve pozisyonda (Tam uyumlu PNG varsayımı)
+                ctx.drawImage(accImg, avatarX, avatarY, targetW, targetH);
+            }
+        });
+
+        // 3. Metni Çiz (Üst kısma)
         const fontSize = Math.max(10, 12 * distScale);
         ctx.font = `bold ${fontSize}px 'Fredoka', sans-serif`;
         ctx.textAlign = 'center';
@@ -1372,6 +1408,10 @@ function App() {
                     setCustomLocations={setCustomLocations}
                     spawnDistance={spawnDistance}
                     setSpawnDistance={setSpawnDistance}
+                    myAvatar={myAvatar}
+                    setMyAvatar={setMyAvatar}
+                    myAccessories={myAccessories}
+                    setMyAccessories={setMyAccessories}
                 />
             )}
 
