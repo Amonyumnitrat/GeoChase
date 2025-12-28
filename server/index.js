@@ -177,7 +177,8 @@ io.on('connection', (socket) => {
       socket.emit('game-started', {
         narratorId: room.narratorId,
         endTime: room.endTime,
-        initialPositions
+        initialPositions,
+        spawnDistance: room.spawnDistance || 500
       });
     }
 
@@ -215,7 +216,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('start-game', ({ roomId, narratorLocation, locationInfo }) => {
+  socket.on('start-game', ({ roomId, narratorLocation, locationInfo, spawnDistance }) => {
     try {
       console.log(`🎮 [SERVER] Oyun başlatma isteği geldi. Oda: ${roomId}`);
 
@@ -236,6 +237,11 @@ io.on('connection', (socket) => {
       room.pastNarrators.push(narratorId);
 
       // Spawn Noktaları
+      // DİNAMİK MESAFE: spawnDistance (varsayılan 500)
+      const targetDist = spawnDistance || 500;
+      const minR = targetDist * 0.9;
+      const maxR = targetDist * 1.1;
+
       const initialPositions = {};
       roomPlayers.forEach(([id, p]) => {
         if (id === narratorId) {
@@ -244,7 +250,7 @@ io.on('connection', (socket) => {
           p.lng = narratorLocation.lng;
         } else {
           p.role = 'seeker';
-          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, 250, 500);
+          const spawn = getRandomLocation(narratorLocation.lat, narratorLocation.lng, minR, maxR);
           p.lat = spawn.lat;
           p.lng = spawn.lng;
         }
@@ -259,6 +265,7 @@ io.on('connection', (socket) => {
       room.endTime = endTime;
       room.narratorLocation = narratorLocation;
       room.locationInfo = locationInfo;
+      room.spawnDistance = targetDist; // Odaya kaydet
       room.isEnding = false;
       room.active = true;
       room.finders = new Set();
@@ -267,7 +274,8 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('game-started', {
         narratorId,
         endTime,
-        initialPositions
+        initialPositions,
+        spawnDistance: targetDist
       });
 
     } catch (error) {

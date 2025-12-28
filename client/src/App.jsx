@@ -255,6 +255,19 @@ function App() {
         }
     };
 
+    const [spawnDistance, setSpawnDistance] = useState(500); // 100m - 1000m
+    const [currentGameSpawnDist, setCurrentGameSpawnDist] = useState(500); // Oyun başladığındaki değer
+
+    // Dinamik Aralık Hesaplayıcılar
+    const calculateRanges = (dist) => {
+        const visibility = 20 + ((dist - 100) * (80 / 900));
+        const capture = 20 + ((dist - 100) * (30 / 900));
+        return {
+            visibility: Math.round(visibility),
+            capture: Math.round(capture)
+        };
+    };
+
 
 
 
@@ -349,7 +362,8 @@ function App() {
                         locationInfo: {
                             city: randomLoc.name,
                             country: "Özel Konum"
-                        }
+                        },
+                        spawnDistance
                     });
                 } else {
                     console.warn(`⚠️ Valid Street View not found in ${randomLoc.name}, retrying...`, status);
@@ -398,7 +412,8 @@ function App() {
                         locationInfo: {
                             city: randomCapital.city,
                             country: randomCapital.country
-                        }
+                        },
+                        spawnDistance
                     });
                 } else {
                     console.warn(`⚠️ Valid Street View not found in ${randomCapital.city}, retrying...`, status);
@@ -487,7 +502,8 @@ function App() {
                                 lng: loc.lng(),
                                 panoId: data.location.pano
                             },
-                            locationInfo // Yeni eklenen bilgi
+                            locationInfo, // Yeni eklenen bilgi
+                            spawnDistance
                         });
                     });
                 } else {
@@ -541,6 +557,7 @@ function App() {
                 setHasGameStartedOnce(true); // Oyun başladı işareti
                 setHasVotedToEnd(false); // Oyları sıfırla
                 setEndRoundVotes([]); // Oy listesini temizle
+                setCurrentGameSpawnDist(data.spawnDistance || 500);
 
                 // Show Narrator Start Location
                 if (data.initialPositions[data.narratorId]) {
@@ -787,8 +804,9 @@ function App() {
             const narrator = otherPlayers.get(narratorId);
             if (narrator) {
                 const dist = getDistance(position.lat, position.lng, narrator.lat, narrator.lng);
-                // 50 metre görüş/bulma mesafesi (Kullanıcı isteği: 30 -> 50)
-                if (dist < 50) {
+                // DİNAMİK YAKALAMA MESAFESİ
+                const { capture } = calculateRanges(currentGameSpawnDist);
+                if (dist < capture) {
                     socketRef.current.emit('found-narrator', { roomId, finderId: socketRef.current.id });
                 }
             }
@@ -979,9 +997,12 @@ function App() {
         otherPlayers.forEach((pData, id) => {
             const dist = getDistance(position.lat, position.lng, pData.lat, pData.lng);
 
+            // DİNAMİK GÖRÜŞ MESAFESİ
+            const { visibility } = calculateRanges(currentGameSpawnDist);
+
             // VISIBILITY RULE: 100m'den uzaktaysa ve Oyun Modundaysan GİZLE
             // İstisna: Dev Mode, veya Oyun Sonu (narratorFound), veya Lobi
-            const isVisible = (dist < 100) || narratorFound || DEV_MODE || uiMode !== 'game';
+            const isVisible = (dist < visibility) || narratorFound || DEV_MODE || uiMode !== 'game';
 
             if (!isVisible) {
                 // Gizle
@@ -995,7 +1016,7 @@ function App() {
             }
 
             // A. Minimap (2D) - 100m Limit
-            if (dist > 100) {
+            if (dist > visibility) {
                 if (markersRef.current.has(id)) {
                     markersRef.current.get(id).setMap(null);
                 }
@@ -1029,7 +1050,7 @@ function App() {
             }
 
             // B. Street View Avatar (3D) - 100m Limit (User preference)
-            if (dist > 100) { // Aslında visibility check zaten 50m, burası 'dist > 45' idi.
+            if (dist > visibility) { // Aslında visibility check zaten 50m, burası 'dist > 45' idi.
                 if (streetMarkersRef.current.has(id)) {
                     streetMarkersRef.current.get(id).setMap(null);
                 }
@@ -1061,7 +1082,7 @@ function App() {
                 }
             }
         });
-    }, [otherPlayers, position, zoom, narratorFound, uiMode]); // Visibility için bağımlılıklar
+    }, [otherPlayers, position, zoom, narratorFound, uiMode, currentGameSpawnDist]); // Visibility için bağımlılıklar
 
     // 5. Rotation
     // 5. Rotation - ARTIK KULLANILMIYOR (Harita sabit kalsın, ok dönsün)
@@ -1293,6 +1314,8 @@ function App() {
                     setGameMode={handleGameModeChange}
                     customLocations={customLocations}
                     setCustomLocations={setCustomLocations}
+                    spawnDistance={spawnDistance}
+                    setSpawnDistance={setSpawnDistance}
                 />
             ) : (
                 <>

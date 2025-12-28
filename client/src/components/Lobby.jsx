@@ -346,7 +346,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
     );
 };
 
-function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission, onLeave, gameMode, setGameMode, customLocations, setCustomLocations }) {
+function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission, onLeave, gameMode, setGameMode, customLocations, setCustomLocations, spawnDistance, setSpawnDistance }) {
     const [username, setUsername] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [isThinking, setIsThinking] = useState(false);
@@ -516,6 +516,57 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             ))}
                         </div>
                     </div>
+
+                    {/* AYARLAR SLIDER (Sadece Host) */}
+                    {isCreator && (
+                        <div style={{
+                            marginBottom: '20px',
+                            background: 'rgba(0,0,0,0.3)',
+                            padding: '15px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                <span style={{ color: '#00ffff', fontWeight: 'bold', fontSize: '0.9rem' }}>⚔️ OYNANIŞ AYARLARI</span>
+                            </div>
+
+                            <div style={{ marginBottom: '5px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ccc', fontSize: '0.8rem', marginBottom: '5px' }}>
+                                    <span>Doğuş Uzaklığı (Zorluk)</span>
+                                    <span style={{ color: '#00ff88', fontWeight: 'bold' }}>{spawnDistance}m</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="100"
+                                    max="1000"
+                                    step="50"
+                                    value={spawnDistance}
+                                    onChange={(e) => setSpawnDistance && setSpawnDistance(Number(e.target.value))}
+                                    style={{ width: '100%', cursor: 'pointer', accentColor: '#00ff88' }}
+                                />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '0.7rem' }}>
+                                    <span>100m</span>
+                                    <span>1km</span>
+                                </div>
+                            </div>
+
+                            {/* Dinamik Bilgiler */}
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                                <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '5px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Görüş Mesafesi</div>
+                                    <div style={{ color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                        {Math.round(20 + ((spawnDistance - 100) * (80 / 900)))}m
+                                    </div>
+                                </div>
+                                <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '5px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Yakalama</div>
+                                    <div style={{ color: '#ff4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                        {Math.round(20 + ((spawnDistance - 100) * (30 / 900)))}m
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {isCreator ? (
                         <button
