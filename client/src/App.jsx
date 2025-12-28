@@ -588,9 +588,15 @@ function App() {
     // 0. Room Join Effect
     useEffect(() => {
         if (uiMode === 'waiting' && socketRef.current && roomId) {
-            socketRef.current.emit('join-room', { roomId, username, isCreator });
+            socketRef.current.emit('join-room', {
+                roomId,
+                username,
+                isCreator,
+                avatarType: myAvatar,
+                accessories: myAccessories
+            });
         }
-    }, [uiMode, roomId, username, isCreator]);
+    }, [uiMode, roomId, username, isCreator, myAvatar, myAccessories]);
 
     useEffect(() => {
         try {
@@ -661,7 +667,14 @@ function App() {
                     Object.entries(data.initialPositions).forEach(([id, pos]) => {
                         if (id !== socketRef.current.id) {
                             const existing = newMap.get(id) || {};
-                            newMap.set(id, { ...existing, lat: pos.lat, lng: pos.lng, role: pos.role });
+                            newMap.set(id, {
+                                ...existing,
+                                lat: pos.lat,
+                                lng: pos.lng,
+                                role: pos.role,
+                                avatarType: pos.avatarType || 'char1',
+                                accessories: pos.accessories || {}
+                            });
                         }
                     });
                     return newMap;
@@ -777,8 +790,9 @@ function App() {
             });
 
             socketRef.current.on('player-joined', (data) => {
+                if (data.playerId === socketRef.current.id) return;
+                console.log("👤 Player Joined with Data:", data);
                 setOtherPlayers(prev => {
-                    if (data.playerId === socketRef.current.id) return prev;
                     const newMap = new Map(prev);
                     newMap.set(data.playerId, data);
                     return newMap;
@@ -1165,13 +1179,25 @@ function App() {
 
                     animateMarker(marker, pData.lat, pData.lng, (currentPos) => {
                         const d = getDistance(position.lat, position.lng, currentPos.lat(), currentPos.lng());
-                        const iconData = getDynamicAvatar(d, pData.username || "Oyuncu", pData.color);
+                        const iconData = getDynamicAvatar(
+                            d,
+                            pData.username || "Oyuncu",
+                            pData.color,
+                            pData.avatarType || 'char1',
+                            pData.accessories || {}
+                        );
                         marker.setIcon(iconData);
                     });
 
                     // Label kullanımına artık gerek yok, isim iconData içinde.
                 } else {
-                    const iconData = getDynamicAvatar(dist, pData.username || "Oyuncu", pData.color);
+                    const iconData = getDynamicAvatar(
+                        dist,
+                        pData.username || "Oyuncu",
+                        pData.color,
+                        pData.avatarType || 'char1',
+                        pData.accessories || {}
+                    );
                     const avatar3D = new window.google.maps.Marker({
                         position: { lat: pData.lat, lng: pData.lng },
                         map: panoramaRef.current,

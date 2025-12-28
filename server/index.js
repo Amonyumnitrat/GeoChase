@@ -128,12 +128,14 @@ io.on('connection', (socket) => {
     roomId: null,
     username: '',
     role: 'seeker',
+    avatarType: 'char1',
+    accessories: {},
     totalScore: 0
   });
 
   socket.emit('init-data', { id: socket.id, color: myColor });
 
-  socket.on('join-room', ({ roomId, username, isCreator }) => {
+  socket.on('join-room', ({ roomId, username, isCreator, avatarType, accessories }) => {
     const player = players.get(socket.id);
     if (!player) return;
 
@@ -146,6 +148,8 @@ io.on('connection', (socket) => {
 
     player.roomId = roomId;
     player.username = username;
+    player.avatarType = avatarType || 'char1';
+    player.accessories = accessories || {};
 
     socket.join(roomId);
     console.log(`✅ ${username} odaya girdi: ${roomId}`);
@@ -186,6 +190,8 @@ io.on('connection', (socket) => {
       playerId: socket.id,
       username: player.username,
       color: player.color,
+      avatarType: player.avatarType,
+      accessories: player.accessories,
       lat: player.lat,
       lng: player.lng,
       heading: player.heading
@@ -211,7 +217,9 @@ io.on('connection', (socket) => {
         lng: data.lng,
         heading: data.heading,
         color: player.color,
-        username: player.username
+        username: player.username,
+        avatarType: player.avatarType,
+        accessories: player.accessories
       });
     }
   });
@@ -254,7 +262,13 @@ io.on('connection', (socket) => {
           p.lat = spawn.lat;
           p.lng = spawn.lng;
         }
-        initialPositions[id] = { lat: p.lat, lng: p.lng, role: p.role };
+        initialPositions[id] = {
+          lat: p.lat,
+          lng: p.lng,
+          role: p.role,
+          avatarType: p.avatarType,
+          accessories: p.accessories
+        };
       });
 
       const startTime = Date.now();
