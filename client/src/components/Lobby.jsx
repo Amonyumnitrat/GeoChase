@@ -7,26 +7,33 @@ const StreetViewBackground = () => {
     const [isGoogleReady, setIsGoogleReady] = useState(false);
 
     // Google Maps API yüklenene kadar bekle (polling with timeout)
+    // ÖNEMLİ: Sadece google.maps değil, StreetViewPanorama'nın da hazır olduğunu kontrol et
     useEffect(() => {
-        // Zaten yüklüyse direkt başla
-        if (window.google && window.google.maps) {
-            console.log('✅ Google Maps API zaten yüklü');
+        const isFullyLoaded = () => {
+            return window.google &&
+                window.google.maps &&
+                typeof window.google.maps.StreetViewPanorama === 'function';
+        };
+
+        // Zaten tam yüklüyse direkt başla
+        if (isFullyLoaded()) {
+            console.log('✅ Google Maps API (+ Street View) zaten yüklü');
             setIsGoogleReady(true);
             return;
         }
 
         let attempts = 0;
-        const maxAttempts = 100; // 10 saniye (100 * 100ms)
+        const maxAttempts = 150; // 15 saniye (150 * 100ms)
 
         // Yüklenmemişse bekle
         const checkGoogle = setInterval(() => {
             attempts++;
-            if (window.google && window.google.maps) {
-                console.log('✅ Google Maps API yüklendi!');
+            if (isFullyLoaded()) {
+                console.log('✅ Google Maps API (+ Street View) yüklendi!');
                 setIsGoogleReady(true);
                 clearInterval(checkGoogle);
             } else if (attempts >= maxAttempts) {
-                console.warn('⚠️ Google Maps API yüklenemedi (timeout)');
+                console.warn('⚠️ Google Maps Street View API yüklenemedi (timeout)');
                 clearInterval(checkGoogle);
                 // Arka plan siyah kalacak ama uygulama çalışmaya devam edecek
             }
@@ -39,49 +46,59 @@ const StreetViewBackground = () => {
     useEffect(() => {
         if (!isGoogleReady || !bgRef.current) return;
 
-        // Çeşitli İlgi Çekici Lokasyonlar
-        const LOCATIONS = [
-            { lat: 41.025636, lng: 28.974223 }, // Istanbul Galata
-            { lat: 40.758896, lng: -73.985130 }, // New York Times Square
-            { lat: 48.858370, lng: 2.294481 },   // Paris Eiffel
-            { lat: 35.659456, lng: 139.700547 }, // Tokyo Shibuya
-            { lat: 51.500729, lng: -0.124625 },  // London Big Ben
-            { lat: 41.890210, lng: 12.492231 },  // Rome Colosseum
-            { lat: -33.856784, lng: 151.215297 }, // Sydney Opera House
-            { lat: 38.643033, lng: 34.828859 }   // Cappadocia
-        ];
+        // Ekstra güvenlik kontrolü
+        if (typeof window.google?.maps?.StreetViewPanorama !== 'function') {
+            console.warn('⚠️ StreetViewPanorama hala hazır değil, atlanıyor');
+            return;
+        }
 
-        // Rastgele bir lokasyon seç
-        const randomLoc = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+        try {
+            // Çeşitli İlgi Çekici Lokasyonlar
+            const LOCATIONS = [
+                { lat: 41.025636, lng: 28.974223 }, // Istanbul Galata
+                { lat: 40.758896, lng: -73.985130 }, // New York Times Square
+                { lat: 48.858370, lng: 2.294481 },   // Paris Eiffel
+                { lat: 35.659456, lng: 139.700547 }, // Tokyo Shibuya
+                { lat: 51.500729, lng: -0.124625 },  // London Big Ben
+                { lat: 41.890210, lng: 12.492231 },  // Rome Colosseum
+                { lat: -33.856784, lng: 151.215297 }, // Sydney Opera House
+                { lat: 38.643033, lng: 34.828859 }   // Cappadocia
+            ];
 
-        const panorama = new window.google.maps.StreetViewPanorama(bgRef.current, {
-            position: randomLoc,
-            pov: { heading: 0, pitch: 10 },
-            zoom: 1,
-            disableDefaultUI: true,
-            showRoadLabels: false,
-            clickToGo: false,
-            scrollwheel: false,
-            disableDoubleClickZoom: true,
-            linksControl: false,
-            panControl: false,
-            enableCloseButton: false
-        });
+            // Rastgele bir lokasyon seç
+            const randomLoc = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
 
-        let heading = 0;
-        let animationFrameId;
+            const panorama = new window.google.maps.StreetViewPanorama(bgRef.current, {
+                position: randomLoc,
+                pov: { heading: 0, pitch: 10 },
+                zoom: 1,
+                disableDefaultUI: true,
+                showRoadLabels: false,
+                clickToGo: false,
+                scrollwheel: false,
+                disableDoubleClickZoom: true,
+                linksControl: false,
+                panControl: false,
+                enableCloseButton: false
+            });
 
-        const animate = () => {
-            heading = (heading + 0.01) % 360; // Çok yavaş dönüş
-            panorama.setPov({ heading: heading, pitch: 10 });
-            animationFrameId = requestAnimationFrame(animate);
-        };
+            let heading = 0;
+            let animationFrameId;
 
-        animate();
+            const animate = () => {
+                heading = (heading + 0.01) % 360; // Çok yavaş dönüş
+                panorama.setPov({ heading: heading, pitch: 10 });
+                animationFrameId = requestAnimationFrame(animate);
+            };
 
-        return () => {
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-        };
+            animate();
+
+            return () => {
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            };
+        } catch (err) {
+            console.error('❌ StreetViewPanorama oluşturulurken hata:', err);
+        }
     }, [isGoogleReady]);
 
     return (
