@@ -1,23 +1,20 @@
 #root {
   width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
-  overflow: hidden;
 }
 
 body {
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  /* Kaydırma çubuklarını gizle */
-  background-color: #000;
-  font-family: 'Inter', sans-serif;
+  background-color: #1a1a2e;
+  font-family: 'Outfit', 'Fredoka', sans-serif;
 }
 
 .app {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
   position: relative;
 }
 
@@ -346,7 +343,7 @@ img[src*="avatar.png"] {
 }
 
 .mode-name {
-  font-family: 'Fredoka', sans-serif;
+  font-family: 'Outfit', 'Fredoka', sans-serif;
   color: #fff;
   font-size: 1rem;
   letter-spacing: 1px;
@@ -365,4 +362,435 @@ img[src*="avatar.png"] {
   color: #C7CEEA;
   font-weight: 700;
   text-shadow: 0 0 5px rgba(199, 206, 234, 0.4);
+}
+
+/* ==================== LANDING PAGE ==================== */
+.landing-container {
+  width: 100%;
+  position: relative;
+  color: white;
+  font-family: 'Outfit', 'Fredoka', sans-serif;
+  padding-bottom: 50px;
+  zoom: 1.2;
+}
+
+.landing-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  z-index: -2;
+}
+
+.landing-bg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 20% 80%, rgba(199, 206, 234, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(181, 234, 215, 0.1) 0%, transparent 50%);
+  z-index: -1;
+}
+
+/* Header */
+.landing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 25px 100px;
+  position: relative;
+  z-index: 10;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.landing-logo {
+  font-size: 1.8rem;
+  font-weight: 800;
+  background: linear-gradient(to right, #FF9AA2, #C7CEEA);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.landing-nav {
+  display: flex;
+  gap: 30px;
+}
+
+.landing-nav a {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: color 0.3s;
+}
+
+.landing-nav a:hover {
+  color: #C7CEEA;
+}
+
+/* Hero Section */
+.landing-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 120px;
+  min-height: 75vh;
+  gap: 80px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.hero-content {
+  flex: 1;
+  max-width: 550px;
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-content.animated {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 20px;
+  color: white;
+}
+
+.hero-title .highlight {
+  background: linear-gradient(to right, #B5EAD7, #C7CEEA);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+
+.hero-cta {
+  margin-bottom: 40px;
+}
+
+.play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 50px;
+  background: linear-gradient(135deg, #B5EAD7 0%, #C7CEEA 100%);
+  border: none;
+  border-radius: 50px;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #1a1a2e;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.play-btn:hover {
+  transform: translateY(-3px) scale(1.02);
+}
+
+.play-btn .play-icon {
+  font-size: 1rem;
+}
+
+.cta-note {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hero-badges {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 30px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.badge-icon {
+  font-size: 1.1rem;
+}
+
+/* Hero Preview */
+.hero-preview {
+  flex: 1;
+  max-width: 500px;
+  opacity: 0;
+  transform: translateX(30px);
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s;
+}
+
+.hero-preview.animated {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.game-preview-container {
+  text-align: center;
+}
+
+.game-preview-frame {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 3px solid rgba(199, 206, 234, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.game-preview-streetview {
+  width: 100%;
+  height: 100%;
+}
+
+.preview-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.preview-marker {
+  position: absolute;
+  font-size: 2rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+.preview-marker.seeker {
+  top: 40%;
+  left: 30%;
+  animation-delay: 0s;
+}
+
+.preview-marker.narrator {
+  top: 50%;
+  right: 25%;
+  animation-delay: 1.5s;
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.preview-caption {
+  margin-top: 15px;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Features Section */
+.landing-features {
+  padding: 100px 120px;
+  text-align: center;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 50px;
+  color: white;
+}
+
+.features-grid {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+}
+
+.feature-card {
+  width: 280px;
+  padding: 35px 25px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-8px);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(199, 206, 234, 0.3);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+}
+
+.feature-icon {
+  font-size: 3rem;
+  margin-bottom: 20px;
+}
+
+.feature-card h3 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
+  color: #C7CEEA;
+}
+
+.feature-card p {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+}
+
+/* How To Play Section */
+.landing-howto {
+  padding: 100px 120px;
+  background: rgba(0, 0, 0, 0.2);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.howto-steps {
+  display: flex;
+  justify-content: center;
+  gap: 50px;
+  flex-wrap: wrap;
+}
+
+.howto-step {
+  text-align: center;
+  max-width: 280px;
+}
+
+.step-number {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #B5EAD7, #C7CEEA);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #1a1a2e;
+  margin: 0 auto 20px;
+}
+
+.howto-step h3 {
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+  color: white;
+}
+
+.howto-step p {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Footer */
+.landing-footer {
+  padding: 60px 30px;
+  /* Padding artırıldı */
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 50px;
+}
+
+.landing-footer p {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .landing-hero {
+    flex-direction: column;
+    padding: 40px 30px;
+    text-align: center;
+  }
+
+  .hero-content {
+    max-width: 100%;
+  }
+
+  .hero-title {
+    font-size: 2.5rem;
+  }
+
+  .hero-badges {
+    justify-content: center;
+  }
+
+  .hero-preview {
+    max-width: 100%;
+  }
+
+  .landing-header {
+    padding: 20px 30px;
+  }
+
+  .landing-nav {
+    display: none;
+  }
+}
+
+/* Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }

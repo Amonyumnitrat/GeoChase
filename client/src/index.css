@@ -4,9 +4,30 @@
     box-sizing: border-box;
 }
 
+/* Scrollbar'ları gizle ama scroll'u koru */
+html,
 body {
-    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE/Edge */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Opera */
+    width: 0;
+    height: 0;
+}
+
+body {
+    margin: 0;
+    background-color: #1a1a2e;
+    color: white;
+    font-family: 'Outfit', 'Fredoka', sans-serif;
+    overflow-y: auto;
+    /* Scroll'u aktif et */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow: hidden;
 }

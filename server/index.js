@@ -329,7 +329,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('next-round', ({ roomId }) => {
-    io.to(roomId).emit('reset-game-ui');
+    io.to(roomId).emit('reset-game-ui', { isTransitioning: true });
   });
 
   socket.on('return-to-lobby', ({ roomId }) => {

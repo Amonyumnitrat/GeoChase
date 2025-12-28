@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import Lobby from './components/Lobby';
+import LandingPage from './components/LandingPage';
 import { CAPITALS_LIST } from './data/capitals';
 import './App.css';
 
@@ -24,7 +25,7 @@ function App() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [sensitivity, setSensitivity] = useState(0.15);
     const [zoom, setZoom] = useState(0);
-    const [uiMode, setUiMode] = useState('lobby'); // 'lobby', 'waiting', 'game'
+    const [uiMode, setUiMode] = useState('landing'); // 'landing', 'lobby', 'waiting', 'game'
     const [username, setUsername] = useState('');
     const [roomId, setRoomId] = useState(null);
     const [isCreator, setIsCreator] = useState(false);
@@ -227,7 +228,7 @@ function App() {
         setUiMode('waiting');
     };
 
-    // Lobby Return Handler
+    // Lobby Return Handler (Oyun bittikten sonra waiting room'a dön)
     const handleReturnToLobby = () => {
         // Oyun state'lerini sıfırla ama oda ve kullanıcı bilgilerini koru
         setGameOverData(null);
@@ -253,6 +254,38 @@ function App() {
         if (socketRef.current && roomId) {
             socketRef.current.emit('return-to-lobby', { roomId });
         }
+    };
+
+    // Odadan Tamamen Ayrıl (Ana lobiye dön)
+    const handleLeaveRoom = () => {
+        // Session'ı temizle
+        sessionStorage.removeItem('geoFind_session');
+
+        // Tüm state'leri sıfırla
+        setRoomId(null);
+        setUsername('');
+        setIsCreator(false);
+        setOtherPlayers(new Map());
+        setGameOverData(null);
+        setRole(null);
+        setGameEndTime(null);
+        setShowRoleReveal(false);
+        setNarratorFound(false);
+        setNarratorId(null);
+        setShowStartLocation(false);
+        setNarratorStartPos(null);
+        setTeleportRights(3);
+        teleportRightsRef.current = 3;
+        setHasVotedToEnd(false);
+        setEndRoundVotes([]);
+        setIsLoading(false);
+        setHasGameStartedOnce(false);
+
+        // Ana lobiye dön
+        setUiMode('lobby');
+
+        // Server'a disconnect sinyali göndermek için socket yeniden bağlanabilir
+        // Şimdilik sadece UI geçişi yeterli
     };
 
     const [spawnDistance, setSpawnDistance] = useState(500); // 100m - 1000m
@@ -285,6 +318,8 @@ function App() {
 
     // GAME START LOGIC (HOST)
     const handleStartGame = (attempts = 0) => {
+        if (attempts === 0) setIsLoading(true); // HEMEN AÇ
+
         // Tek kişi kontrolü (Sadece ilk denemede)
         if (attempts === 0 && otherPlayers.size === 0) {
             setErrorMsg("Oyunu başlatmak için en az 2 kişi gereklidir.");
@@ -292,7 +327,6 @@ function App() {
             return;
         }
 
-        if (attempts === 0) setIsLoading(true); // İlk denemede loading aç
         console.log(`Game Start Triggered (Attempt ${attempts + 1}, Mode: ${gameMode})`);
 
         // Max deneme sayısını artır
@@ -568,7 +602,7 @@ function App() {
                 setGameOverData(null); // Reset game over screen
                 setTeleportRights(3);
                 teleportRightsRef.current = 3;
-                setIsLoading(false); // Oyun başladı, loading kapat
+                // setIsLoading(false); // <--- REMOVED: Loading'i burada kapatma, oyun ekranı açılınca kapat
                 setHasGameStartedOnce(true); // Oyun başladı işareti
                 setHasVotedToEnd(false); // Oyları sıfırla
                 setEndRoundVotes([]); // Oy listesini temizle
@@ -611,6 +645,7 @@ function App() {
                         // useEffect(position, uiMode) haritayı bu konumla oluşturacak
                         setPosition({ lat: myData.lat, lng: myData.lng });
                         setUiMode('game');
+                        setIsLoading(false); // <--- ADDED: Oyun ekranı açılınca kapat
                     }
                     // SEEKER İÇİN
                     // SEEKER İÇİN SNAP LOGIC (Geçerli Yol Kontrolü)
@@ -642,6 +677,7 @@ function App() {
                                 });
 
                                 setUiMode('game');
+                                setIsLoading(false); // <--- ADDED: Oyun ekranı açılınca kapat
                             } else {
                                 // Bulamazsa (Örn: Denizin ortası), ANLATICI'nın yanına ışınla.
                                 console.warn("⚠️ Seeker spawn invalid, fallback to Narrator location.");
@@ -658,6 +694,7 @@ function App() {
                                     });
 
                                     setUiMode('game');
+                                    setIsLoading(false); // <--- ADDED: Oyun ekranı açılınca kapat
                                 }
                             }
                         });
@@ -730,10 +767,23 @@ function App() {
 
 
             // RESET UI BETWEEN ROUNDS
-            socketRef.current.on('reset-game-ui', () => {
+            socketRef.current.on('reset-game-ui', (data) => {
                 setUiMode('waiting');
                 setGameOverData(null);
-                setIsLoading(false);
+                setNarratorFound(false);
+                setGameEndTime(null);
+                setTeleportRights(3);
+                teleportRightsRef.current = 3;
+
+                if (data && data.isTransitioning) {
+                    // Sonraki tura geçiş - yükleme ekranı göster
+                    setIsLoading(true);
+                    // hasGameStartedOnce true kalmalı ki intermission gösterilsin
+                } else {
+                    // Lobiye dönüş - normal lobi ekranı göster
+                    setIsLoading(false);
+                    setHasGameStartedOnce(false); // Intermission yerine normal lobi göster
+                }
             });
 
             // GAME MODE CHANGED (Host değiştirdiğinde)
@@ -761,6 +811,7 @@ function App() {
             });
 
             socketRef.current.on('disconnect', () => setIsConnected(false));
+            window.socket = socketRef.current; // FOR TESTING
 
             // ODA HATASI (Geçersiz kod vb.)
             socketRef.current.on('room-error', (data) => {
@@ -1197,25 +1248,7 @@ function App() {
         }
     }, [gameEndTime, gameOverData, roomId]); // Dependency'e roomId eklendi
 
-    // Reset UI Handler for Next Round
-    useEffect(() => {
-        if (!socketRef.current) return;
 
-        socketRef.current.on('reset-game-ui', () => {
-            setUiMode('waiting'); // Waiting moduna dön
-            setGameOverData(null); // Skor tablosunu kapat
-            setNarratorFound(false);
-            setGameEndTime(null);
-            // Işınlanma hakkını sıfırla
-            setTeleportRights(3);
-            teleportRightsRef.current = 3;
-            // Harita instance'larını temizleme işini zaten useEffect(uiMode) yapıyor
-        });
-
-        return () => {
-            socketRef.current.off('reset-game-ui');
-        };
-    }, []);
 
     // --- REVEAL COUNTDOWN TIMER ---
     useEffect(() => {
@@ -1291,12 +1324,13 @@ function App() {
     // NEXT ROUND Butonu (Host tarafından çağrılır)
     // NEXT ROUND Butonu (Host tarafından çağrılır)
     const handleNextRound = () => {
+        setIsLoading(true); // HEMEN AÇ
+        setUiMode('waiting'); // Hemen Lobiye (ve maskeye) geç
         if (socketRef.current) {
             socketRef.current.emit('next-round', { roomId });
 
             // UI'ın sıfırlanması ve herkesin senkronize olması için kısa bir gecikme ekliyoruz.
             // Bu "bambaşka çözüm", her iki tarafın önce temizlenmesini garanti eder.
-            setIsLoading(true);
             setTimeout(() => {
                 handleStartGame(); // Yeni konum aramasını başlat (2 saniye sonra)
             }, 2000);
@@ -1312,7 +1346,13 @@ function App() {
 
     return (
         <div className="app">
-            {uiMode !== 'game' && !DEV_MODE ? (
+            {/* LANDING PAGE */}
+            {uiMode === 'landing' && (
+                <LandingPage onPlay={() => setUiMode('lobby')} />
+            )}
+
+            {/* LOBBY / WAITING ROOM */}
+            {(uiMode === 'lobby' || uiMode === 'waiting') && !DEV_MODE && (
                 <Lobby
                     onJoin={handleJoinGame}
                     mode={uiMode}
@@ -1324,7 +1364,7 @@ function App() {
                     myColor={myColor}
                     isLoading={isLoading}
                     isIntermission={hasGameStartedOnce}
-                    onLeave={handleReturnToLobby}
+                    onLeave={handleLeaveRoom}
                     gameMode={gameMode}
                     setGameMode={handleGameModeChange}
                     customLocations={customLocations}
@@ -1332,34 +1372,57 @@ function App() {
                     spawnDistance={spawnDistance}
                     setSpawnDistance={setSpawnDistance}
                 />
-            ) : (
+            )}
+
+            {/* GAME SCREEN */}
+            {(uiMode === 'game' || DEV_MODE) && (
                 <>
                     {/* ROLE REVEAL SCREEN */}
                     {isUiVisible && showRoleReveal && (
                         <div style={{
                             position: 'fixed',
                             top: 0, left: 0, width: '100%', height: '100%',
-                            background: 'rgba(0,0,0,0.5)', // %50 Siyah
+                            background: 'rgba(10, 14, 26, 0.7)',
+                            backdropFilter: 'blur(10px)',
+                            WebkitBackdropFilter: 'blur(10px)',
                             zIndex: 9999,
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: 'white',
-                            fontFamily: "'Fredoka', sans-serif"
+                            fontFamily: "'Fredoka', sans-serif",
+                            animation: 'fadeIn 0.5s ease-out'
                         }}>
-                            <div style={{ fontSize: '2rem', letterSpacing: '5px', opacity: 0.8 }}>SENİN ROLÜN</div>
                             <div style={{
-                                fontSize: '6rem',
+                                fontSize: '1.8rem',
+                                letterSpacing: '6px',
+                                color: 'rgba(199, 206, 234, 0.7)',
+                                fontWeight: '600',
+                                marginBottom: '10px'
+                            }}>SENİN ROLÜN</div>
+                            <div style={{
+                                fontSize: '5rem',
                                 fontWeight: '900',
-                                color: role === 'narrator' ? '#FF4444' : '#00FFFF',
-                                letterSpacing: '2px',
-                                marginTop: '20px',
-                                transform: 'scale(1.1)'
+                                background: role === 'narrator'
+                                    ? 'linear-gradient(135deg, #FF9AA2 0%, #FFB7B2 100%)'
+                                    : 'linear-gradient(135deg, #B5EAD7 0%, #C7CEEA 100%)',
+                                WebkitBackgroundClip: 'text',
+                                backgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                letterSpacing: '4px',
+                                textShadow: 'none',
+                                filter: `drop-shadow(0 0 30px ${role === 'narrator' ? 'rgba(255, 154, 162, 0.5)' : 'rgba(181, 234, 215, 0.5)'})`
                             }}>
                                 {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
                             </div>
-                            <div style={{ marginTop: '30px', color: '#aaa', fontSize: '1rem', fontStyle: 'italic' }}>
+                            <div style={{
+                                marginTop: '25px',
+                                color: role === 'narrator' ? 'rgba(255, 183, 178, 0.8)' : 'rgba(199, 206, 234, 0.8)',
+                                fontSize: '1.1rem',
+                                fontStyle: 'italic',
+                                letterSpacing: '1px'
+                            }}>
                                 {role === 'narrator' ? '"Konumu tarif et ve bulunmasını sağla!"' : '"Anlatıcıyı dinle ve konumu bul!"'}
                             </div>
                         </div>
@@ -1381,43 +1444,43 @@ function App() {
                         }}>
                             {/* Room Code Info */}
                             <div style={{
-                                background: 'rgba(0,0,0,0.6)',
-                                backdropFilter: 'blur(5px)',
-                                padding: '10px 20px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.2)',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                backdropFilter: 'blur(15px)',
+                                padding: '10px 25px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(255,255,255,0.1)',
                                 color: 'white',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                minWidth: '100px'
                             }}>
-                                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ODA</div>
-                                <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{roomId}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'bold', letterSpacing: '1px' }}>ODA</div>
+                                <div style={{ fontWeight: '800', color: '#C7CEEA', fontSize: '1.2rem' }}>{roomId}</div>
                             </div>
 
                             {/* Timer & Status */}
                             <div style={{
-                                background: 'rgba(0,0,0,0.6)',
-                                backdropFilter: 'blur(5px)',
-                                padding: '10px 20px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.2)',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                backdropFilter: 'blur(15px)',
+                                padding: '10px 25px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(255,255,255,0.1)',
                                 color: 'white',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                                minWidth: '120px'
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                minWidth: '130px'
                             }}>
-                                <div style={{ fontSize: '0.8rem', color: narratorFound ? '#ff4444' : '#aaa' }}>
+                                <div style={{ fontSize: '0.75rem', color: narratorFound ? '#FF9AA2' : 'rgba(255,255,255,0.5)', fontWeight: 'bold', letterSpacing: '1px' }}>
                                     {narratorFound ? 'ANLATICI BULUNDU!' : 'SÜRE'}
                                 </div>
                                 <div style={{
                                     fontSize: '1.5rem',
-                                    fontWeight: 'bold',
-                                    fontFamily: 'monospace',
-                                    color: narratorFound ? '#ff4444' : '#ffffff'
+                                    fontWeight: '800',
+                                    color: narratorFound ? '#FF9AA2' : '#B5EAD7'
                                 }}>
                                     {formatTime(timeLeft)}
                                 </div>
@@ -1425,19 +1488,20 @@ function App() {
 
                             {/* Role Info */}
                             <div style={{
-                                background: 'rgba(0,0,0,0.6)',
-                                backdropFilter: 'blur(5px)',
-                                padding: '10px 20px',
-                                borderRadius: '10px',
-                                border: '1px solid rgba(255,255,255,0.2)',
+                                background: 'rgba(255, 255, 255, 0.08)',
+                                backdropFilter: 'blur(15px)',
+                                padding: '10px 25px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(255,255,255,0.1)',
                                 color: 'white',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                minWidth: '120px'
                             }}>
-                                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ROLÜN</div>
-                                <div style={{ fontWeight: 'bold', color: role === 'narrator' ? '#ff4444' : '#00ffff' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontWeight: 'bold', letterSpacing: '1px' }}>ROLÜN</div>
+                                <div style={{ fontWeight: '800', color: role === 'narrator' ? '#FF9AA2' : '#C7CEEA', fontSize: '1.1rem' }}>
                                     {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
                                 </div>
                             </div>
@@ -1452,22 +1516,22 @@ function App() {
                                 }}
                                 disabled={hasVotedToEnd}
                                 style={{
-                                    background: hasVotedToEnd ? 'rgba(0,255,0,0.3)' : 'rgba(255,100,0,0.6)',
-                                    backdropFilter: 'blur(5px)',
-                                    padding: '10px 20px',
-                                    borderRadius: '10px',
-                                    border: hasVotedToEnd ? '1px solid rgba(0,255,0,0.5)' : '1px solid rgba(255,255,255,0.2)',
-                                    color: 'white',
+                                    background: hasVotedToEnd ? 'rgba(181, 234, 215, 0.2)' : 'rgba(255, 218, 193, 0.2)',
+                                    backdropFilter: 'blur(15px)',
+                                    padding: '10px 25px',
+                                    borderRadius: '12px',
+                                    border: hasVotedToEnd ? '1px solid #B5EAD7' : '1px solid #FFDAC1',
+                                    color: hasVotedToEnd ? '#B5EAD7' : '#FFDAC1',
                                     cursor: hasVotedToEnd ? 'not-allowed' : 'pointer',
-                                    fontWeight: 'bold',
+                                    fontWeight: '800',
                                     fontSize: '0.9rem',
-                                    boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                                    transition: 'all 0.3s ease',
-                                    opacity: hasVotedToEnd ? 0.7 : 1
+                                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    opacity: hasVotedToEnd ? 0.8 : 1
                                 }}
                             >
                                 {hasVotedToEnd ? '✓ OY VERİLDİ' : 'ROUND\'U BİTİR'}
-                                <div style={{ fontSize: '0.7rem', marginTop: '2px', color: '#ffaa00' }}>
+                                <div style={{ fontSize: '0.7rem', marginTop: '2px', color: 'rgba(255,255,255,0.6)' }}>
                                     {endRoundVotes.length}/{otherPlayers.size + 1} oy
                                 </div>
                             </button>
@@ -1575,16 +1639,19 @@ function App() {
                                 left: '50%',
                                 transform: 'translate(-50%, -50%)',
                                 width: '600px',
-                                height: '450px',
+                                height: 'auto',
                                 zIndex: 2500,
-                                background: 'rgba(0,0,0,0.9)',
-                                padding: '20px',
-                                borderRadius: '20px',
-                                boxShadow: '0 0 70px rgba(0,0,0,0.9)',
+                                background: 'rgba(15, 20, 35, 0.75)',
+                                backdropFilter: 'blur(20px)',
+                                WebkitBackdropFilter: 'blur(20px)',
+                                padding: '25px',
+                                borderRadius: '24px',
+                                boxShadow: '0 8px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(199, 206, 234, 0.15)',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 alignItems: 'center',
-                                border: '1px solid rgba(255,255,255,0.1)'
+                                border: '1px solid rgba(199, 206, 234, 0.25)',
+                                animation: 'fadeIn 0.4s ease-out'
                             }}>
                                 {/* Close Button */}
                                 <button
@@ -1593,29 +1660,53 @@ function App() {
                                         position: 'absolute',
                                         top: '15px',
                                         right: '15px',
-                                        background: 'rgba(255,255,255,0.1)',
-                                        border: 'none',
-                                        color: 'white',
-                                        fontSize: '1.2rem',
-                                        width: '30px',
-                                        height: '30px',
+                                        background: 'rgba(199, 206, 234, 0.15)',
+                                        border: '1px solid rgba(199, 206, 234, 0.3)',
+                                        color: '#C7CEEA',
+                                        fontSize: '1rem',
+                                        width: '32px',
+                                        height: '32px',
                                         borderRadius: '50%',
                                         cursor: 'pointer',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        transition: 'all 0.2s'
+                                        transition: 'all 0.2s ease',
+                                        fontWeight: 'bold'
                                     }}
-                                    onMouseEnter={(e) => e.target.style.background = 'rgba(255,0,0,0.5)'}
-                                    onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                    onMouseEnter={(e) => {
+                                        e.target.style.background = 'rgba(255, 100, 100, 0.4)';
+                                        e.target.style.borderColor = 'rgba(255, 100, 100, 0.6)';
+                                        e.target.style.color = '#fff';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.target.style.background = 'rgba(199, 206, 234, 0.15)';
+                                        e.target.style.borderColor = 'rgba(199, 206, 234, 0.3)';
+                                        e.target.style.color = '#C7CEEA';
+                                    }}
                                 >
                                     ✕
                                 </button>
 
-                                <div style={{ color: 'white', fontSize: '1.5rem', marginBottom: '15px', fontWeight: 'bold', letterSpacing: '1px', textAlign: 'center' }}>
+                                {/* Başlık */}
+                                <div style={{
+                                    color: '#C7CEEA',
+                                    fontSize: '1.4rem',
+                                    marginBottom: '8px',
+                                    fontWeight: '800',
+                                    letterSpacing: '2px',
+                                    textAlign: 'center',
+                                    textShadow: '0 0 20px rgba(199, 206, 234, 0.4)'
+                                }}>
                                     ANLATICI: {narratorId === myId ? 'Sensin' : (otherPlayers.get(narratorId)?.username || 'Bilinmiyor')}
                                 </div>
-                                <div style={{ color: '#00ffff', fontSize: '1rem', marginBottom: '15px' }}>
+                                <div style={{
+                                    color: '#B5EAD7',
+                                    fontSize: '1rem',
+                                    marginBottom: '20px',
+                                    fontWeight: '600',
+                                    letterSpacing: '1px'
+                                }}>
                                     Burada başlıyor!
                                 </div>
 
@@ -1623,26 +1714,49 @@ function App() {
                                 <div style={{
                                     width: '560px',
                                     height: '300px',
-                                    borderRadius: '12px',
-                                    overflow: 'hidden', // Magic: clip children
+                                    borderRadius: '16px',
+                                    overflow: 'hidden',
                                     position: 'relative',
-                                    border: '1px solid rgba(255,255,255,0.2)'
+                                    border: '2px solid rgba(199, 206, 234, 0.3)',
+                                    boxShadow: '0 4px 30px rgba(0, 0, 0, 0.4), inset 0 0 20px rgba(0, 0, 0, 0.2)'
                                 }}>
                                     <div
                                         ref={startLocationMapRef}
                                         style={{
                                             width: '100%',
-                                            height: '115%', // Make taller to push footer down
+                                            height: '115%',
                                             marginTop: '-5px',
-                                            backgroundColor: '#111'
+                                            backgroundColor: 'rgba(10, 14, 26, 0.8)'
                                         }}
                                     >
-                                        <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>Harita Yükleniyor...</div>
+                                        <div style={{ color: '#C7CEEA', padding: '20px', textAlign: 'center' }}>Harita Yükleniyor...</div>
                                     </div>
                                 </div>
 
-                                <div style={{ color: '#00ffff', marginTop: '15px', fontSize: '1.1rem', fontWeight: '500' }}>
-                                    Dikkatli bakın! <span style={{ color: '#fff', fontSize: '1.3rem', margin: '0 5px' }}>{revealTimeLeft}</span> saniye kaldı...
+                                {/* Countdown */}
+                                <div style={{
+                                    color: '#B5EAD7',
+                                    marginTop: '20px',
+                                    fontSize: '1.1rem',
+                                    fontWeight: '600',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}>
+                                    <span style={{ opacity: 0.8 }}>Dikkatli bakın!</span>
+                                    <span style={{
+                                        color: '#fff',
+                                        fontSize: '1.5rem',
+                                        fontWeight: '900',
+                                        background: 'rgba(199, 206, 234, 0.2)',
+                                        padding: '4px 12px',
+                                        borderRadius: '8px',
+                                        minWidth: '40px',
+                                        textAlign: 'center'
+                                    }}>
+                                        {revealTimeLeft}
+                                    </span>
+                                    <span style={{ opacity: 0.8 }}>saniye kaldı...</span>
                                 </div>
                             </div>
                         )
@@ -1652,37 +1766,56 @@ function App() {
                     {
                         isUiVisible && (
                             <div style={{
-                                position: 'absolute', bottom: 20, left: 20, zIndex: 2000,
+                                position: 'absolute', bottom: 30, left: 30, zIndex: 2000,
                                 opacity: showRoleReveal ? 0 : 1,
                                 pointerEvents: showRoleReveal ? 'none' : 'auto',
                                 transition: 'opacity 0.5s ease',
                                 display: 'flex',
-                                gap: '10px'
+                                gap: '15px'
                             }}>
                                 <button
-                                    className="settings-btn"
                                     onClick={() => setIsSettingsOpen(true)}
+                                    style={{
+                                        background: 'rgba(255, 255, 255, 0.08)',
+                                        backdropFilter: 'blur(15px)',
+                                        padding: '12px 20px',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#C7CEEA',
+                                        cursor: 'pointer',
+                                        fontWeight: '800',
+                                        fontSize: '0.9rem',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
                                 >
                                     ⚙️ Ayarlar
                                 </button>
                                 <button
                                     onClick={() => setShowReturnConfirm(true)}
                                     style={{
-                                        background: 'rgba(255, 50, 50, 0.6)',
-                                        backdropFilter: 'blur(5px)',
-                                        color: 'white',
-                                        border: '1px solid rgba(255, 255, 255, 0.2)',
-                                        padding: '10px 15px',
-                                        borderRadius: '8px',
+                                        background: 'rgba(255, 154, 162, 0.15)',
+                                        backdropFilter: 'blur(15px)',
+                                        color: '#FF9AA2',
+                                        border: '1px solid rgba(255, 154, 162, 0.3)',
+                                        padding: '12px 20px',
+                                        borderRadius: '12px',
                                         cursor: 'pointer',
-                                        fontWeight: 'bold',
+                                        fontWeight: '800',
                                         fontSize: '0.9rem',
-                                        transition: 'all 0.2s',
-                                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: '5px'
+                                        gap: '8px'
                                     }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 154, 162, 0.25)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 154, 162, 0.15)'}
                                 >
                                     🚪 Lobiye Dön
                                 </button>
@@ -1693,12 +1826,53 @@ function App() {
                     {/* GAME OVER MODAL */}
                     {
                         isUiVisible && gameOverData && (
-                            <div className="lobby-container" style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)' }}>
-                                <div className="lobby-card" style={{ maxWidth: '600px', padding: '2rem' }}>
-                                    <h1 className="game-title" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
+                            <div style={{
+                                position: 'fixed',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                zIndex: 99999,
+                                background: 'rgba(10, 14, 26, 0.85)',
+                                backdropFilter: 'blur(10px)',
+                                WebkitBackdropFilter: 'blur(10px)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                animation: 'fadeIn 0.4s ease-out'
+                            }}>
+                                <div style={{
+                                    maxWidth: '600px',
+                                    width: '90%',
+                                    padding: '30px',
+                                    background: 'rgba(20, 25, 40, 0.8)',
+                                    backdropFilter: 'blur(20px)',
+                                    WebkitBackdropFilter: 'blur(20px)',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(199, 206, 234, 0.25)',
+                                    boxShadow: '0 8px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(199, 206, 234, 0.1)',
+                                    color: 'white',
+                                    fontFamily: "'Fredoka', sans-serif"
+                                }}>
+                                    {/* Başlık */}
+                                    <h1 style={{
+                                        fontSize: '2.5rem',
+                                        marginBottom: '0.5rem',
+                                        textAlign: 'center',
+                                        background: 'linear-gradient(to right, #FF9AA2, #C7CEEA)',
+                                        WebkitBackgroundClip: 'text',
+                                        backgroundClip: 'text',
+                                        WebkitTextFillColor: 'transparent',
+                                        textShadow: 'none',
+                                        fontWeight: '900',
+                                        letterSpacing: '2px'
+                                    }}>
                                         {gameOverData.reason === 'narrator_found' ? 'ANLATICI YAKALANDI!' : 'SÜRE DOLDU!'}
                                     </h1>
-                                    <div className="game-subtitle" style={{ fontSize: '1.2rem', color: gameOverData.reason === 'narrator_found' ? '#00ff88' : '#ff4444' }}>
+                                    <div style={{
+                                        fontSize: '1.2rem',
+                                        color: gameOverData.reason === 'narrator_found' ? '#B5EAD7' : '#FF9AA2',
+                                        textAlign: 'center',
+                                        marginBottom: '20px',
+                                        fontWeight: '600'
+                                    }}>
                                         {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
                                     </div>
 
@@ -1706,12 +1880,13 @@ function App() {
                                     {gameOverData.locationInfo && (
                                         <div style={{
                                             marginTop: '10px',
-                                            padding: '10px',
-                                            background: 'rgba(255,255,255,0.1)',
-                                            borderRadius: '8px',
-                                            textAlign: 'center'
+                                            padding: '12px 16px',
+                                            background: 'rgba(199, 206, 234, 0.1)',
+                                            borderRadius: '12px',
+                                            textAlign: 'center',
+                                            border: '1px solid rgba(199, 206, 234, 0.2)'
                                         }}>
-                                            <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#C7CEEA', marginBottom: '4px', letterSpacing: '1px', fontWeight: '600' }}>KONUM</div>
                                             <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
                                                 {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
                                             </div>
@@ -1722,12 +1897,13 @@ function App() {
                                     {gameOverData.narratorLocation && (
                                         <div style={{
                                             marginTop: '15px',
-                                            padding: '10px',
-                                            background: 'rgba(0, 0, 0, 0.3)',
-                                            borderRadius: '12px',
-                                            border: '2px solid rgba(0, 255, 255, 0.3)'
+                                            padding: '12px',
+                                            background: 'rgba(15, 20, 35, 0.6)',
+                                            borderRadius: '16px',
+                                            border: '2px solid rgba(199, 206, 234, 0.25)',
+                                            boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.3)'
                                         }}>
-                                            <div style={{ fontSize: '0.85rem', color: '#00ffff', marginBottom: '8px', fontWeight: 'bold' }}>
+                                            <div style={{ fontSize: '0.85rem', color: '#B5EAD7', marginBottom: '10px', fontWeight: 'bold', textAlign: 'center' }}>
                                                 📍 KONUM UYDU GÖRÜNTÜSÜ
                                             </div>
                                             <img
@@ -1735,78 +1911,111 @@ function App() {
                                                 alt="Konum Uydu Görüntüsü"
                                                 style={{
                                                     width: '100%',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                                                    borderRadius: '12px',
+                                                    border: '1px solid rgba(199, 206, 234, 0.15)'
                                                 }}
                                             />
                                         </div>
                                     )}
 
-                                    <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    {/* SKORLAR */}
+                                    <div style={{ margin: '20px 0', textAlign: 'left', maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         {/* ANLATICI BÖLÜMÜ */}
                                         <div>
-                                            <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
+                                            <div style={{
+                                                color: '#FF9AA2',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 'bold',
+                                                marginBottom: '10px',
+                                                borderBottom: '1px solid rgba(255, 154, 162, 0.3)',
+                                                paddingBottom: '6px',
+                                                letterSpacing: '1px'
+                                            }}>
                                                 ANLATICI
                                             </div>
                                             {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
                                                 <div key={`narrator-${i}`} style={{
                                                     display: 'flex',
                                                     justifyContent: 'space-between',
-                                                    padding: '10px',
-                                                    background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                                    marginBottom: '5px',
-                                                    borderRadius: '5px',
-                                                    border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                                    padding: '12px 14px',
+                                                    background: s.isWinner ? 'rgba(181, 234, 215, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                                    marginBottom: '6px',
+                                                    borderRadius: '10px',
+                                                    border: s.isWinner ? '1px solid rgba(181, 234, 215, 0.4)' : '1px solid rgba(255, 255, 255, 0.05)'
                                                 }}>
-                                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                                                         <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
                                                     </div>
-                                                    <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
+                                                    <div style={{ fontWeight: 'bold', color: '#FF9AA2' }}>{s.score} Puan</div>
                                                 </div>
                                             ))}
                                         </div>
 
                                         {/* ARAYICILAR BÖLÜMÜ */}
                                         <div>
-                                            <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
+                                            <div style={{
+                                                color: '#C7CEEA',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 'bold',
+                                                marginBottom: '10px',
+                                                borderBottom: '1px solid rgba(199, 206, 234, 0.3)',
+                                                paddingBottom: '6px',
+                                                letterSpacing: '1px'
+                                            }}>
                                                 ARAYICILAR
                                             </div>
                                             {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
                                                 <div key={`seeker-${i}`} style={{
                                                     display: 'flex',
                                                     justifyContent: 'space-between',
-                                                    padding: '10px',
-                                                    background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                                    marginBottom: '5px',
-                                                    borderRadius: '5px',
-                                                    border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                                    padding: '12px 14px',
+                                                    background: s.isWinner ? 'rgba(181, 234, 215, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                                    marginBottom: '6px',
+                                                    borderRadius: '10px',
+                                                    border: s.isWinner ? '1px solid rgba(181, 234, 215, 0.4)' : '1px solid rgba(255, 255, 255, 0.05)'
                                                 }}>
-                                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                                        <span style={{ color: '#aaa' }}>#{i + 1}</span>
+                                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                                        <span style={{ color: 'rgba(199, 206, 234, 0.6)', fontSize: '0.9rem' }}>#{i + 1}</span>
                                                         <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
                                                     </div>
-                                                    <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
+                                                    <div style={{ fontWeight: 'bold', color: '#C7CEEA' }}>{s.score} Puan</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
+                                    {/* BUTONLAR */}
                                     {(isCreator || gameOverData.isFinalGameEnd) && (
                                         <button
-                                            className="join-btn"
                                             onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
-                                            style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
+                                            style={{
+                                                width: '100%',
+                                                padding: '16px',
+                                                background: gameOverData.isFinalGameEnd
+                                                    ? 'rgba(255, 255, 255, 0.1)'
+                                                    : 'linear-gradient(135deg, #B5EAD7 0%, #C7CEEA 100%)',
+                                                color: gameOverData.isFinalGameEnd ? '#C7CEEA' : '#1a1a2e',
+                                                border: gameOverData.isFinalGameEnd ? '1px solid rgba(199, 206, 234, 0.3)' : 'none',
+                                                borderRadius: '12px',
+                                                fontSize: '1.1rem',
+                                                fontWeight: '800',
+                                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                                opacity: isLoading ? 0.7 : 1,
+                                                pointerEvents: isLoading ? 'none' : 'auto',
+                                                transition: 'all 0.3s ease',
+                                                letterSpacing: '1px'
+                                            }}
                                         >
                                             {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
                                         </button>
                                     )}
                                     {!isCreator && !gameOverData.isFinalGameEnd && (
-                                        <div style={{ color: '#aaa', marginTop: '10px' }}>
+                                        <div style={{ color: 'rgba(199, 206, 234, 0.7)', marginTop: '15px', textAlign: 'center', fontSize: '0.95rem' }}>
                                             Oda kurucusunun yeni turu başlatması bekleniyor...
                                         </div>
                                     )}
                                     {gameOverData.isFinalGameEnd && (
-                                        <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
+                                        <div style={{ color: '#B5EAD7', marginTop: '15px', fontSize: '0.95rem', textAlign: 'center', fontWeight: '600' }}>
                                             🏆 Herkes anlatıcı görevini tamamladı!
                                         </div>
                                     )}
@@ -1819,39 +2028,146 @@ function App() {
             {/* AYARLAR PANELİ (MODAL) */}
             {
                 isUiVisible && isSettingsOpen && (
-                    <div className="settings-panel-overlay" style={{
-                        position: 'absolute',
-                        top: 0, left: 0, width: '100%', height: '100%',
-                        background: 'rgba(0,0,0,0.5)',
+                    <div style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(10, 14, 26, 0.7)',
+                        backdropFilter: 'blur(8px)',
+                        WebkitBackdropFilter: 'blur(8px)',
                         zIndex: 3000,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        animation: 'fadeIn 0.3s ease-out'
                     }}>
-                        <div className="settings-panel" style={{
-                            background: '#1a1a2e', padding: '30px', borderRadius: '10px',
-                            border: '1px solid rgba(255,255,255,0.1)', width: '300px', color: 'white',
-                            boxShadow: '0 0 20px rgba(0,0,0,0.5)'
+                        <div style={{
+                            background: 'rgba(20, 25, 40, 0.85)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            padding: '25px 30px',
+                            borderRadius: '20px',
+                            border: '1px solid rgba(199, 206, 234, 0.25)',
+                            width: '320px',
+                            color: 'white',
+                            boxShadow: '0 8px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(199, 206, 234, 0.1)',
+                            fontFamily: "'Fredoka', sans-serif"
                         }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                                <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Ayarlar</h2>
-                                <button onClick={() => setIsSettingsOpen(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+                            {/* Header */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '20px',
+                                paddingBottom: '15px',
+                                borderBottom: '1px solid rgba(199, 206, 234, 0.15)'
+                            }}>
+                                <h2 style={{
+                                    margin: 0,
+                                    fontSize: '1.3rem',
+                                    color: '#C7CEEA',
+                                    fontWeight: '800',
+                                    letterSpacing: '1px'
+                                }}>Ayarlar</h2>
+                                <button
+                                    onClick={() => setIsSettingsOpen(false)}
+                                    style={{
+                                        background: 'rgba(199, 206, 234, 0.1)',
+                                        border: '1px solid rgba(199, 206, 234, 0.2)',
+                                        color: '#C7CEEA',
+                                        fontSize: '1.2rem',
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '50%',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.target.style.background = 'rgba(255, 100, 100, 0.3)';
+                                        e.target.style.borderColor = 'rgba(255, 100, 100, 0.5)';
+                                        e.target.style.color = '#fff';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.target.style.background = 'rgba(199, 206, 234, 0.1)';
+                                        e.target.style.borderColor = 'rgba(199, 206, 234, 0.2)';
+                                        e.target.style.color = '#C7CEEA';
+                                    }}
+                                >&times;</button>
                             </div>
-                            <div className="setting-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                <span>Kontrol Modu</span>
-                                <button onClick={() => setIsFpsMode(prev => !prev)} style={{ padding: '5px 10px', background: isFpsMode ? '#4CAF50' : '#333', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.9rem' }}>
+
+                            {/* Kontrol Modu */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '12px 0',
+                                borderBottom: '1px solid rgba(199, 206, 234, 0.1)'
+                            }}>
+                                <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.95rem' }}>Kontrol Modu</span>
+                                <button
+                                    onClick={() => setIsFpsMode(prev => !prev)}
+                                    style={{
+                                        padding: '8px 16px',
+                                        background: isFpsMode
+                                            ? 'linear-gradient(135deg, #B5EAD7 0%, #98D4BB 100%)'
+                                            : 'rgba(199, 206, 234, 0.15)',
+                                        color: isFpsMode ? '#1a1a2e' : '#C7CEEA',
+                                        border: isFpsMode ? 'none' : '1px solid rgba(199, 206, 234, 0.3)',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem',
+                                        fontWeight: '700',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
                                     {isFpsMode ? 'FPS Modu' : 'Mouse Modu'}
                                 </button>
                             </div>
+
+                            {/* Hassasiyet Slider (FPS modunda) */}
                             {isFpsMode && (
-                                <div className="setting-item" style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                        <span>Hassasiyet</span>
-                                        <span style={{ color: '#aaa', fontSize: '0.9rem' }}>{sensitivity.toFixed(2)}</span>
+                                <div style={{ padding: '15px 0', borderBottom: '1px solid rgba(199, 206, 234, 0.1)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                        <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.95rem' }}>Hassasiyet</span>
+                                        <span style={{
+                                            color: '#B5EAD7',
+                                            fontSize: '0.9rem',
+                                            background: 'rgba(181, 234, 215, 0.15)',
+                                            padding: '2px 10px',
+                                            borderRadius: '4px',
+                                            fontWeight: '600'
+                                        }}>{sensitivity.toFixed(2)}</span>
                                     </div>
-                                    <input type="range" min="0.01" max="1.0" step="0.01" value={sensitivity} onChange={(e) => setSensitivity(parseFloat(e.target.value))} style={{ width: '100%', cursor: 'pointer' }} />
+                                    <input
+                                        type="range"
+                                        min="0.01"
+                                        max="1.0"
+                                        step="0.01"
+                                        value={sensitivity}
+                                        onChange={(e) => setSensitivity(parseFloat(e.target.value))}
+                                        style={{
+                                            width: '100%',
+                                            cursor: 'pointer',
+                                            accentColor: '#B5EAD7'
+                                        }}
+                                    />
                                 </div>
                             )}
-                            <div style={{ marginTop: '20px', fontSize: '0.8rem', color: '#666', textAlign: 'center' }}>
-                                FPS Modunda iken: <br /> Mouse ile etrafa bak <br /> 'W' ile ilerle <br /> ESC ile çık
+
+                            {/* Bilgi Metni */}
+                            <div style={{
+                                marginTop: '20px',
+                                fontSize: '0.8rem',
+                                color: 'rgba(199, 206, 234, 0.5)',
+                                textAlign: 'center',
+                                lineHeight: '1.6'
+                            }}>
+                                FPS Modunda iken: <br />
+                                <span style={{ color: 'rgba(181, 234, 215, 0.7)' }}>Mouse ile etrafa bak</span> <br />
+                                <span style={{ color: 'rgba(181, 234, 215, 0.7)' }}>'W' ile ilerle</span> <br />
+                                <span style={{ color: 'rgba(255, 154, 162, 0.7)' }}>ESC ile çık</span>
                             </div>
                         </div>
                     </div>
@@ -2085,6 +2401,7 @@ function App() {
                     </div>
                 </div>
             )}
+
         </div>
     );
 }
