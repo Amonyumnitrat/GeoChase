@@ -742,7 +742,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
         <div className="lobby-container">
             <div className="lobby-card">
                 <h1 className="game-title">GeoChase</h1>
-                <p className="game-subtitle">Street View Saklambaç</p>
+                <p className="game-subtitle">Dünya Çapında Gerçek Zamanlı Kovalamaca</p>
 
                 <div className="lobby-form">
                     <div className="input-group">
