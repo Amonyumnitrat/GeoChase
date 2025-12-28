@@ -6,20 +6,29 @@ const StreetViewBackground = () => {
     const bgRef = useRef(null);
     const [isGoogleReady, setIsGoogleReady] = useState(false);
 
-    // Google Maps API yüklenene kadar bekle (polling)
+    // Google Maps API yüklenene kadar bekle (polling with timeout)
     useEffect(() => {
         // Zaten yüklüyse direkt başla
         if (window.google && window.google.maps) {
+            console.log('✅ Google Maps API zaten yüklü');
             setIsGoogleReady(true);
             return;
         }
 
+        let attempts = 0;
+        const maxAttempts = 100; // 10 saniye (100 * 100ms)
+
         // Yüklenmemişse bekle
         const checkGoogle = setInterval(() => {
+            attempts++;
             if (window.google && window.google.maps) {
                 console.log('✅ Google Maps API yüklendi!');
                 setIsGoogleReady(true);
                 clearInterval(checkGoogle);
+            } else if (attempts >= maxAttempts) {
+                console.warn('⚠️ Google Maps API yüklenemedi (timeout)');
+                clearInterval(checkGoogle);
+                // Arka plan siyah kalacak ama uygulama çalışmaya devam edecek
             }
         }, 100); // Her 100ms kontrol et
 

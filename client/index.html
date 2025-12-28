@@ -13,25 +13,63 @@
     /* Flash of Unstyled Content (FOUC) Engelleme */
     body {
       margin: 0;
-      background-color: #000;
+      background-color: #0a0e1a;
       color: white;
       font-family: 'Fredoka', sans-serif;
     }
 
-    #root:empty {
+    /* Yükleme Ekranı */
+    .initial-loader {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100vh;
-      font-size: 1.2rem;
-      opacity: 0.5;
+      gap: 20px;
+    }
+
+    .initial-loader h1 {
+      font-size: 2.5rem;
+      color: #00ffff;
+      margin: 0;
+      text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+    }
+
+    .initial-loader p {
+      font-size: 1rem;
+      color: rgba(255, 255, 255, 0.6);
+      margin: 0;
+    }
+
+    .loader-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(0, 255, 255, 0.2);
+      border-top-color: #00ffff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* React mount olduğunda loader gizlenir */
+    #root:not(:empty) .initial-loader {
+      display: none;
     }
   </style>
 </head>
 
 <body>
   <div id="root">
-    <div style="font-family: 'Fredoka', sans-serif;">Yükleniyor...</div>
+    <div class="initial-loader">
+      <h1>🌍 GeoChase</h1>
+      <div class="loader-spinner"></div>
+      <p>Oyun yükleniyor...</p>
+    </div>
   </div>
   <script type="module" src="/src/main.jsx"></script>
   <!-- GOOGLE_MAPS_SCRIPT -->

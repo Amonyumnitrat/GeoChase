@@ -524,8 +524,23 @@ function App() {
     useEffect(() => {
         try {
             // Canlıya alındığında (Production) sunucu ile client aynı yere bağlansın diye boş bırakıyoruz
-            socketRef.current = io();
-            socketRef.current.on('connect', () => setIsConnected(true));
+            // Firefox/Edge uyumluluğu için connection options
+            socketRef.current = io({
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 20000,
+                transports: ['websocket', 'polling'] // WebSocket önce, polling fallback
+            });
+
+            socketRef.current.on('connect', () => {
+                console.log('✅ Socket.io bağlantısı kuruldu');
+                setIsConnected(true);
+            });
+
+            socketRef.current.on('connect_error', (err) => {
+                console.warn('⚠️ Socket.io bağlantı hatası:', err.message);
+            });
 
             socketRef.current.on('init-data', (data) => {
                 setMyId(data.id);
