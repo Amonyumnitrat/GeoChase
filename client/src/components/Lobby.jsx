@@ -4,9 +4,31 @@ import '../App.css';
 // Dönen Street View Arka Plan Bileşeni
 const StreetViewBackground = () => {
     const bgRef = useRef(null);
+    const [isGoogleReady, setIsGoogleReady] = useState(false);
 
+    // Google Maps API yüklenene kadar bekle (polling)
     useEffect(() => {
-        if (!window.google || !window.google.maps) return;
+        // Zaten yüklüyse direkt başla
+        if (window.google && window.google.maps) {
+            setIsGoogleReady(true);
+            return;
+        }
+
+        // Yüklenmemişse bekle
+        const checkGoogle = setInterval(() => {
+            if (window.google && window.google.maps) {
+                console.log('✅ Google Maps API yüklendi!');
+                setIsGoogleReady(true);
+                clearInterval(checkGoogle);
+            }
+        }, 100); // Her 100ms kontrol et
+
+        return () => clearInterval(checkGoogle);
+    }, []);
+
+    // API hazır olduğunda panoramayı oluştur
+    useEffect(() => {
+        if (!isGoogleReady || !bgRef.current) return;
 
         // Çeşitli İlgi Çekici Lokasyonlar
         const LOCATIONS = [
@@ -51,7 +73,7 @@ const StreetViewBackground = () => {
         return () => {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
         };
-    }, []);
+    }, [isGoogleReady]);
 
     return (
         <div
@@ -65,7 +87,8 @@ const StreetViewBackground = () => {
                 height: '100%',
                 zIndex: -1,
                 filter: 'brightness(0.5)', // Metin okunabilirliği için karartma
-                pointerEvents: 'none'
+                pointerEvents: 'none',
+                background: '#0a0e1a' // API yüklenene kadar siyah arka plan
             }}
         />
     );
