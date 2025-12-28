@@ -73,6 +73,7 @@ const GamePreview = () => {
 
 function LandingPage({ onPlay }) {
     const [isAnimated, setIsAnimated] = useState(false);
+    const [showLegal, setShowLegal] = useState(null); // 'privacy' | 'terms' | null
 
     useEffect(() => {
         // Animasyonları başlat
@@ -86,7 +87,20 @@ function LandingPage({ onPlay }) {
 
             {/* Header */}
             <header className="landing-header">
-                <div className="landing-logo">🌍 GeoChase</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <img src="/logo.png" alt="GeoChase" className="landing-logo-img" style={{ height: '45px' }} />
+                    <span className="landing-logo">GeoChase</span>
+                    <span style={{
+                        fontSize: '0.75rem',
+                        background: 'rgba(255, 154, 162, 0.2)',
+                        color: '#FF9AA2',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        border: '1px solid rgba(255, 154, 162, 0.3)',
+                        fontWeight: '600',
+                        letterSpacing: '0.5px'
+                    }}>BETA v0.1</span>
+                </div>
                 <nav className="landing-nav">
                     <a href="#features">Özellikler</a>
                     <a href="#how-to-play">Nasıl Oynanır</a>
@@ -185,7 +199,80 @@ function LandingPage({ onPlay }) {
             {/* Footer */}
             <footer className="landing-footer">
                 <p>GeoChase © 2025 • Tüm Dünyayı Keşfet</p>
+                <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)', marginTop: '5px' }}>
+                    BETA v0.1 • Bu bir geliştirme sürümüdür, hatalar içerebilir.
+                </p>
+                <div style={{ marginTop: '15px', display: 'flex', gap: '20px', justifyContent: 'center', fontSize: '0.85rem' }}>
+                    <button onClick={() => setShowLegal('privacy')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', textDecoration: 'underline' }}>
+                        Gizlilik Politikası
+                    </button>
+                    <button onClick={() => setShowLegal('terms')} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', textDecoration: 'underline' }}>
+                        Kullanım Koşulları
+                    </button>
+                </div>
             </footer>
+
+            {/* LEGAL MODAL */}
+            {showLegal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.85)', zIndex: 10000,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(5px)'
+                }} onClick={() => setShowLegal(null)}>
+                    <div style={{
+                        background: '#1a1a2e', width: '90%', maxWidth: '600px',
+                        padding: '30px', borderRadius: '20px', border: '1px solid #444',
+                        color: '#eee', maxHeight: '80vh', overflowY: 'auto',
+                        boxShadow: '0 0 50px rgba(0,0,0,0.5)'
+                    }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                            <h2 style={{ color: '#B5EAD7', margin: 0 }}>
+                                {showLegal === 'privacy' ? 'Gizlilik Politikası' : 'Kullanım Koşulları'}
+                            </h2>
+                            <button onClick={() => setShowLegal(null)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
+                        </div>
+
+                        {showLegal === 'privacy' ? (
+                            <div style={{ lineHeight: '1.6', fontSize: '0.95rem', color: '#ccc' }}>
+                                <p><strong>Son Güncelleme:</strong> 28 Aralık 2025</p>
+                                <p>GeoChase ("biz", "hizmetimiz") olarak gizliliğinize önem veriyoruz. Bu politika, verilerinizin nasıl işlendiğini açıklar.</p>
+
+                                <h3>1. Toplanan Veriler</h3>
+                                <p>GeoChase oynamak için herhangi bir üyelik kaydı gerekmez. Sadece oyun sırasında kullandığınız "Takma Ad" (Username) geçici olarak sunucularımızda tutulur.</p>
+
+                                <h3>2. Çerezler ve Yerel Depolama</h3>
+                                <p>Oyun deneyiminizin kesintiye uğramaması (sayfa yenilendiğinde oyuna dönebilmeniz) için tarayıcınızın <code>sessionStorage</code> özelliği kullanılmaktadır. Bu veriler tarayıcıyı kapattığınızda silinir.</p>
+
+                                <h3>3. Google Maps API</h3>
+                                <p>Oyunumuz Google Maps Platformu'nu kullanmaktadır. Google'ın gizlilik politikasına tabidir. Konum verileriniz sadece oyun mekanikleri (yakalama/kaçma) için anlık olarak işlenir ve kaydedilmez.</p>
+                            </div>
+                        ) : (
+                            <div style={{ lineHeight: '1.6', fontSize: '0.95rem', color: '#ccc' }}>
+                                <p><strong>Sürüm:</strong> Beta v0.1</p>
+                                <p>GeoChase'i kullanarak aşağıdaki şartları kabul etmiş sayılırsınız:</p>
+
+                                <h3>1. Hizmetin Niteliği</h3>
+                                <p>Bu oyun şu anda <strong>BETA</strong> aşamasındadır. Hatalar (buglar), kesintiler veya veri kayıpları yaşanabilir. Geliştirici, hizmetin sürekliliğini garanti etmez.</p>
+
+                                <h3>2. Uygun Kullanım</h3>
+                                <p>Oyunu hile yaparak, sistem açıklarını kullanarak veya diğer oyuncuları rahatsız edecek şekilde (hakaret içeren kullanıcı adları vb.) kullanmak yasaktır.</p>
+
+                                <h3>3. Sorumluluk Reddi</h3>
+                                <p>Oyun tamamen eğlence ve eğitim amaçlıdır. Google Street View görüntüleri üzerindeki içeriklerden GeoChase sorumlu değildir.</p>
+                            </div>
+                        )}
+
+                        <button onClick={() => setShowLegal(null)} style={{
+                            marginTop: '25px', width: '100%', padding: '12px',
+                            background: '#C7CEEA', color: '#000', border: 'none',
+                            borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer'
+                        }}>
+                            ANLAŞILDI
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

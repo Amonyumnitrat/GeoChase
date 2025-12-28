@@ -940,7 +940,10 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
     return (
         <div className="lobby-container">
             <div className="lobby-card">
-                <h1 className="game-title">GeoChase</h1>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', marginBottom: '10px' }}>
+                    <img src="/logo.png" alt="GeoChase" className="game-logo-img" style={{ height: '60px' }} />
+                    <h1 className="game-title" style={{ margin: 0, fontSize: '3rem' }}>GeoChase</h1>
+                </div>
                 <p className="game-subtitle">Dünya Çapında Gerçek Zamanlı Kovalamaca</p>
 
                 <div className="lobby-form">
