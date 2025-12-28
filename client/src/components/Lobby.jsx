@@ -41,7 +41,7 @@ const StreetViewBackground = () => {
         let animationFrameId;
 
         const animate = () => {
-            heading = (heading + 0.1) % 360;
+            heading = (heading + 0.01) % 360; // Çok yavaş dönüş
             panorama.setPov({ heading: heading, pitch: 10 });
             animationFrameId = requestAnimationFrame(animate);
         };
@@ -372,10 +372,24 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
         return Math.random().toString(36).substring(2, 6).toUpperCase();
     };
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(roomId);
-        setIsCopied(true);
-        setTimeout(() => setIsCopied(false), 2000);
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(roomId);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        } catch (err) {
+            // Fallback: Manuel kopyalama
+            const textArea = document.createElement('textarea');
+            textArea.value = roomId;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        }
     };
 
     const handleCreate = (e) => {
