@@ -238,7 +238,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
             width: '90%',
             maxWidth: '400px',
             background: 'rgba(20, 20, 30, 0.95)',
-            border: '1px solid rgba(0, 255, 255, 0.3)',
+            border: '1px solid rgba(199, 206, 234, 0.4)',
             borderRadius: '15px',
             padding: '15px',
             zIndex: 100,
@@ -250,7 +250,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
             animation: 'fadeInUp 0.3s ease-out'
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ color: '#00ffff', margin: 0, fontSize: '1rem' }}>Özel Liste Oluştur</h3>
+                <h3 style={{ color: '#C7CEEA', margin: 0, fontSize: '1rem' }}>Özel Liste Oluştur</h3>
                 <div style={{ color: '#888', fontSize: '0.8rem' }}>
                     Başka bir mod seçerek paneli kapatabilirsiniz
                 </div>
@@ -279,7 +279,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
                     disabled={isSearching}
                     style={{
                         padding: '8px 15px',
-                        background: '#00ff88',
+                        background: '#B5EAD7',
                         border: 'none',
                         borderRadius: '6px',
                         fontWeight: 'bold',
@@ -297,7 +297,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
                 <div style={{
                     position: 'relative',
                     background: 'rgba(30, 30, 40, 0.98)',
-                    border: '1px solid rgba(0, 255, 255, 0.3)',
+                    border: '1px solid rgba(199, 206, 234, 0.4)',
                     borderRadius: '6px',
                     marginTop: '5px',
                     maxHeight: '150px',
@@ -314,10 +314,10 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
                                 borderBottom: idx < suggestions.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                                 transition: 'background 0.2s'
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0, 255, 255, 0.1)'}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(199, 206, 234, 0.2)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            <div style={{ color: '#00ffff', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                            <div style={{ color: '#C7CEEA', fontSize: '0.85rem', fontWeight: 'bold' }}>
                                 {prediction.structured_formatting.main_text}
                             </div>
                             <div style={{ color: '#888', fontSize: '0.75rem' }}>
@@ -355,7 +355,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#ff4444',
+                                    color: '#FF9AA2',
                                     cursor: 'pointer',
                                     fontSize: '1rem'
                                 }}
@@ -379,7 +379,7 @@ const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) =
                 style={{
                     width: '100%',
                     padding: '10px',
-                    background: 'linear-gradient(to right, #00ff88, #00ffff)',
+                    background: 'linear-gradient(to right, #B5EAD7, #C7CEEA)',
                     border: 'none',
                     borderRadius: '8px',
                     fontWeight: 'bold',
@@ -477,7 +477,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                 <div className="lobby-card" style={{ maxWidth: '400px', textAlign: 'center', padding: '40px' }}>
                     <div style={{
                         width: '60px', height: '60px',
-                        background: '#00ff88', borderRadius: '50%',
+                        background: '#B5EAD7', borderRadius: '50%',
                         margin: '0 auto 20px'
                     }}></div>
                     <h2 style={{ color: 'white', marginBottom: '10px' }}>SONRAKİ TUR HAZIRLANIYOR</h2>
@@ -485,7 +485,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         Lütfen bekleyin, herkes yeni konuma ışınlanıyor...
                     </p>
                     {isCreator && (
-                        <div style={{ marginTop: '20px', color: '#00ffff', fontSize: '0.8rem' }}>
+                        <div style={{ marginTop: '20px', color: '#C7CEEA', fontSize: '0.8rem' }}>
                             (Oda Kurucusu: Konum aranıyor...)
                         </div>
                     )}
@@ -523,11 +523,11 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                     zIndex: 20
                 }}>
                     <span style={{ fontSize: '0.8rem', color: '#aaa' }}>SEÇİLEN MOD:</span>
-                    <span style={{ fontSize: '0.9rem', color: '#00ffff', fontWeight: 'bold' }}>{MODES[gameMode] || gameMode}</span>
+                    <span style={{ fontSize: '0.9rem', color: '#C7CEEA', fontWeight: 'bold' }}>{MODES[gameMode] || gameMode}</span>
                 </div>
 
                 <div className="lobby-card" style={{ maxWidth: '450px' }}>
-                    <h2 style={{ color: '#00ffff', marginBottom: '5px' }}>Oda Hazırlanıyor</h2>
+                    <h2 style={{ color: '#C7CEEA', marginBottom: '5px' }}>Oda Hazırlanıyor</h2>
                     <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem', marginBottom: '20px' }}>Arkadaşlar bekliyor...</p>
 
                     <div className="room-code-display" onClick={handleCopy} style={{
@@ -540,10 +540,10 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         position: 'relative'
                     }}>
                         <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase' }}>Oda Kodu (Kopyalamak için tıkla)</div>
-                        <div style={{ fontSize: '2rem', fontWeight: '800', fontFamily: 'monospace', color: '#00ffff', letterSpacing: '5px' }}>
+                        <div style={{ fontSize: '2rem', fontWeight: '800', fontFamily: 'monospace', color: '#C7CEEA', letterSpacing: '5px' }}>
                             {roomId}
                         </div>
-                        {isCopied && <div style={{ position: 'absolute', right: 10, top: 10, color: '#00ff88', fontSize: '0.7rem' }}>Kopyalandı!</div>}
+                        {isCopied && <div style={{ position: 'absolute', right: 10, top: 10, color: '#B5EAD7', fontSize: '0.7rem' }}>Kopyalandı!</div>}
                     </div>
 
                     <div className="participants-list" style={{
@@ -590,13 +590,13 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             border: '1px solid rgba(255, 255, 255, 0.1)'
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                <span style={{ color: '#00ffff', fontWeight: 'bold', fontSize: '0.9rem' }}>⚔️ OYNANIŞ AYARLARI</span>
+                                <span style={{ color: '#C7CEEA', fontWeight: 'bold', fontSize: '0.9rem' }}>⚔️ OYNANIŞ AYARLARI</span>
                             </div>
 
                             <div style={{ marginBottom: '5px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ccc', fontSize: '0.8rem', marginBottom: '5px' }}>
                                     <span>Doğuş Uzaklığı (Zorluk)</span>
-                                    <span style={{ color: '#00ff88', fontWeight: 'bold' }}>{spawnDistance}m</span>
+                                    <span style={{ color: '#B5EAD7', fontWeight: 'bold' }}>{spawnDistance}m</span>
                                 </div>
                                 <input
                                     type="range"
@@ -605,7 +605,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                     step="50"
                                     value={spawnDistance}
                                     onChange={(e) => setSpawnDistance && setSpawnDistance(Number(e.target.value))}
-                                    style={{ width: '100%', cursor: 'pointer', accentColor: '#00ff88' }}
+                                    style={{ width: '100%', cursor: 'pointer', accentColor: '#B5EAD7' }}
                                 />
                                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '0.7rem' }}>
                                     <span>100m</span>
@@ -623,7 +623,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                 </div>
                                 <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '5px', textAlign: 'center' }}>
                                     <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Yakalama</div>
-                                    <div style={{ color: '#ff4444', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                    <div style={{ color: '#FF9AA2', fontWeight: 'bold', fontSize: '0.9rem' }}>
                                         {Math.round(20 + ((spawnDistance - 100) * (30 / 900)))}m
                                     </div>
                                 </div>
@@ -639,7 +639,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             style={{
                                 width: '100%',
                                 padding: '15px',
-                                background: (isLoading || participants.length === 0) ? '#444' : 'linear-gradient(to right, #00ff88, #00ffff)',
+                                background: (isLoading || participants.length === 0) ? '#444' : 'linear-gradient(to right, #B5EAD7, #C7CEEA)',
                                 color: (isLoading || participants.length === 0) ? '#888' : '#000',
                                 border: 'none',
                                 borderRadius: '10px',
@@ -651,7 +651,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             {isLoading ? 'KONUM ARANIYOR...' : (participants.length === 0 ? 'EN AZ 2 OYUNCU GEREKLİ' : 'OYUNU BAŞLAT')}
                         </button>
                     ) : (
-                        <div style={{ color: '#00ff88', fontSize: '1rem', fontWeight: 'bold' }}>
+                        <div style={{ color: '#B5EAD7', fontSize: '1rem', fontWeight: 'bold' }}>
                             Liderin oyunu başlatması bekleniyor...
                         </div>
                     )}
@@ -717,10 +717,10 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                     left: '50%',
                                     transform: 'translateX(-50%)',
                                     padding: '12px 24px',
-                                    background: 'rgba(0, 255, 136, 0.2)',
-                                    border: '2px solid #00ff88',
+                                    background: 'rgba(181, 234, 215, 0.2)',
+                                    border: '2px solid #B5EAD7',
                                     borderRadius: '10px',
-                                    color: '#00ff88',
+                                    color: '#B5EAD7',
                                     fontWeight: 'bold',
                                     cursor: 'pointer',
                                     fontSize: '0.9rem',
@@ -763,7 +763,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                         style={{
                             width: '100%',
                             padding: '15px',
-                            background: '#00ffff',
+                            background: '#C7CEEA',
                             color: '#000',
                             border: 'none',
                             borderRadius: '10px',
@@ -811,7 +811,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                             disabled={isThinking}
                             style={{
                                 flex: 1,
-                                background: '#00ff88',
+                                background: '#B5EAD7',
                                 boxSizing: 'border-box'
                             }}
                         >
@@ -822,7 +822,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                 </div>
 
                 <div className="lobby-footer">
-                    <p>WASD ile Hareket Et • Mouse ile Bak</p>
+                    <p>Zaman Daralıyor... Hedefi Bulmak İçin Dünyayı Keşfet!</p>
                 </div>
             </div>
 
