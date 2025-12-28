@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
                 transformIndexHtml(html) {
                     return html.replace(
                         '<!-- GOOGLE_MAPS_SCRIPT -->',
-                        `<script src="https://maps.googleapis.com/maps/api/js?key=${env.VITE_GOOGLE_MAPS_API_KEY}&v=weekly" async defer></script>`
+                        `<script src="https://maps.googleapis.com/maps/api/js?key=${env.VITE_GOOGLE_MAPS_API_KEY}&libraries=places&v=weekly&loading=async" async defer></script>`
                     )
                 }
             }

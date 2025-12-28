@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import Lobby from './components/Lobby';
+import { CAPITALS_LIST } from './data/capitals';
 import './App.css';
 
 function App() {
@@ -48,6 +49,10 @@ function App() {
     const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
     const [roundKey, setRoundKey] = useState(0); // Tur değişiminde haritayı yeniden oluşturmak için
     const [hasGameStartedOnce, setHasGameStartedOnce] = useState(false); // Oyunun en az bir kere başlayıp başlamadığını tutar
+    const [endRoundVotes, setEndRoundVotes] = useState([]); // Round'u erken bitirmek için oy verenler (Array)
+    const [hasVotedToEnd, setHasVotedToEnd] = useState(false); // Kullanıcı oy verdi mi
+    const [showReturnConfirm, setShowReturnConfirm] = useState(false); // Lobiye dönüş onayı
+    const [errorMsg, setErrorMsg] = useState(null); // Merkezi hata mesajı
 
     // Narrator Hareketi Kısıtlama
     const movementAnchorRef = useRef(null); // Hareketin merkezi (Başlangıç veya Işınlanma noktası)
@@ -185,8 +190,36 @@ function App() {
 
 
 
+    // Session Persistence (Auto-Rejoin on F5)
+    useEffect(() => {
+        const savedSession = sessionStorage.getItem('geoFind_session');
+        if (savedSession) {
+            try {
+                const { username, roomId, isCreator } = JSON.parse(savedSession);
+                if (username && roomId) {
+                    console.log('Restoring session:', username, roomId);
+                    setOtherPlayers(new Map());
+                    setUsername(username);
+                    setRoomId(roomId);
+                    setIsCreator(isCreator);
+                    setUiMode('waiting');
+                }
+            } catch (e) {
+                console.error('Session parse error', e);
+                sessionStorage.removeItem('geoFind_session');
+            }
+        }
+    }, []);
+
     // Lobby Join Handler
     const handleJoinGame = (user, code, creator) => {
+        // Save session
+        sessionStorage.setItem('geoFind_session', JSON.stringify({
+            username: user,
+            roomId: code,
+            isCreator: creator
+        }));
+
         setOtherPlayers(new Map()); // Listeyi temizle (Ghostları sil)
         setUsername(user);
         setRoomId(code);
@@ -196,17 +229,60 @@ function App() {
 
     // Lobby Return Handler
     const handleReturnToLobby = () => {
-        window.location.reload();
+        // Oyun state'lerini sıfırla ama oda ve kullanıcı bilgilerini koru
+        setGameOverData(null);
+        setRole(null);
+        setGameEndTime(null);
+        setShowRoleReveal(false);
+        setNarratorFound(false);
+        setNarratorId(null);
+        setShowStartLocation(false);
+        setNarratorStartPos(null);
+        setTeleportRights(3);
+        teleportRightsRef.current = 3;
+        setHasVotedToEnd(false);
+        setEndRoundVotes([]);
+        setIsLoading(false);
+        setRoundKey(prev => prev + 1);
+        setHasGameStartedOnce(false); // Intermission ekranını kapatmak için
+
+        // Waiting room'a geri dön (Username ve RoomId korunur)
+        setUiMode('waiting');
+
+        // Server'a reset sinyali gönder
+        if (socketRef.current && roomId) {
+            socketRef.current.emit('return-to-lobby', { roomId });
+        }
     };
 
 
 
+
+    const [gameMode, setGameMode] = useState('WORLD'); // 'WORLD', 'CAPITALS', 'CUSTOM' etc.
+    const [customLocations, setCustomLocations] = useState([]); // Kullanıcının seçtiği özel şehirler
+
+    // Game Mode Change Handler (sadece host çağırabilir)
+    const handleGameModeChange = (newMode) => {
+        setGameMode(newMode);
+        // Host ise server'a bildir
+        if (isCreator && socketRef.current && roomId) {
+            socketRef.current.emit('change-game-mode', { roomId, gameMode: newMode });
+        }
+    };
+
     // GAME START LOGIC (HOST)
     const handleStartGame = (attempts = 0) => {
-        if (attempts === 0) setIsLoading(true); // İlk denemede loading aç
-        console.log(`Game Start Triggered (Attempt ${attempts + 1})`);
+        // Tek kişi kontrolü (Sadece ilk denemede)
+        if (attempts === 0 && otherPlayers.size === 0) {
+            setErrorMsg("Oyunu başlatmak için en az 2 kişi gereklidir.");
+            setIsLoading(false);
+            return;
+        }
 
-        // Max deneme sayısını artır (Dünya geneli için daha fazla deneme gerekebilir)
+        if (attempts === 0) setIsLoading(true); // İlk denemede loading aç
+        console.log(`Game Start Triggered (Attempt ${attempts + 1}, Mode: ${gameMode})`);
+
+        // Max deneme sayısını artır
         if (attempts > 20) {
             alert("Uygun Street View konumu bulunamadı. Lütfen tekrar deneyin.");
             setIsLoading(false);
@@ -227,76 +303,42 @@ function App() {
             return;
         }
 
-        // DÜNYA GENELİ RASTGELE KONUM ALGORİTMASI
-        // Okyanuslardan kaçınmak için kabaca kıta kutuları (Bounding Boxes) tanımlıyoruz.
-        const regions = [
-            { name: "Europe", latMin: 35, latMax: 70, lngMin: -10, lngMax: 40, weight: 4 },
-            { name: "North America", latMin: 25, latMax: 70, lngMin: -130, lngMax: -60, weight: 3 },
-            { name: "Asia", latMin: 10, latMax: 70, lngMin: 40, lngMax: 140, weight: 4 },
-            { name: "South America", latMin: -55, latMax: 15, lngMin: -80, lngMax: -35, weight: 2 },
-            { name: "Australia", latMin: -45, latMax: -10, lngMin: 110, lngMax: 155, weight: 2 },
-            { name: "Africa", latMin: -35, latMax: 35, lngMin: -20, lngMax: 50, weight: 1 } // Street view az
-        ];
-
-        // Ağırlıklı rastgele seçim
-        const totalWeight = regions.reduce((sum, r) => sum + r.weight, 0);
-        let randomVal = Math.random() * totalWeight;
-        let selectedRegion = regions[regions.length - 1];
-
-        for (const region of regions) {
-            randomVal -= region.weight;
-            if (randomVal <= 0) {
-                selectedRegion = region;
-                break;
+        // --- MOD 5: KENDİN SEÇ (CUSTOM) ---
+        if (gameMode === 'CUSTOM') {
+            if (!customLocations || customLocations.length === 0) {
+                alert("Lütfen önce listeden şehir ekleyin!");
+                setIsLoading(false);
+                return;
             }
-        }
 
-        const randomLat = selectedRegion.latMin + Math.random() * (selectedRegion.latMax - selectedRegion.latMin);
-        const randomLng = selectedRegion.lngMin + Math.random() * (selectedRegion.lngMax - selectedRegion.lngMin);
+            const randomLoc = customLocations[Math.floor(Math.random() * customLocations.length)];
+            console.log(`Searching for StreetView in Custom Location: ${randomLoc.name}`);
 
-        console.log(`Searching for StreetView in ${selectedRegion.name} at:`, randomLat, randomLng);
+            // Şehir merkezinden rastgele bir offset ekle (0-10km arası)
+            const offsetKm = Math.random() * 10; // 0-10 km
+            const offsetDeg = offsetKm / 111; // km'yi derece'ye çevir (yaklaşık)
+            const angle = Math.random() * 2 * Math.PI; // Rastgele açı
 
-        const svService = new window.google.maps.StreetViewService();
-        svService.getPanorama({
-            location: { lat: randomLat, lng: randomLng },
-            radius: 100000, // 100km yarıçap (Issız yerlerde bile en yakın yolu bulsun)
-            preference: window.google.maps.StreetViewPreference.NEAREST,
-            source: window.google.maps.StreetViewSource.OUTDOOR
-        }, (data, status) => {
-            if (status === 'OK' && data && data.location && data.location.latLng) {
-                // KONTROL: Hareket edilebilir mi? (Link sayısı)
-                if (!data.links || data.links.length < 2) {
-                    // En az 2 link olsun ki sıkışmayalım (Opsiyonel, duruma göre 1 de olabilir)
-                    console.warn("⚠️ Street View bulundu ama hareket kısıtlı. Tekrar deneniyor...");
-                    handleStartGame(attempts + 1);
-                    return;
-                }
+            const searchLat = randomLoc.lat + (offsetDeg * Math.cos(angle));
+            const searchLng = randomLoc.lng + (offsetDeg * Math.sin(angle) / Math.cos(randomLoc.lat * Math.PI / 180));
 
-                console.log(`✅ StreetView bulundu! Link sayısı: ${data.links.length}`);
-                const loc = data.location.latLng;
+            console.log(`📍 Arama noktası: ${searchLat.toFixed(4)}, ${searchLng.toFixed(4)} (${offsetKm.toFixed(2)}km offset)`);
 
-                // Geocoder ile yer ismini bul (Şehir, Ülke)
-                const geocoder = new window.google.maps.Geocoder();
-                geocoder.geocode({ location: loc }, (results, status) => {
-                    let locationInfo = { city: "Bilinmiyor", country: "Bilinmiyor" };
-                    if (status === 'OK' && results[0]) {
-                        // Basitçe adres bileşenlerinden bulalım
-                        const components = results[0].address_components;
-                        let city = "";
-                        let country = "";
-
-                        for (const comp of components) {
-                            if (comp.types.includes("locality") || comp.types.includes("administrative_area_level_1")) {
-                                if (!city) city = comp.long_name;
-                            }
-                            if (comp.types.includes("country")) {
-                                country = comp.long_name;
-                            }
-                        }
-                        locationInfo = { city: city || "Bilinmiyor", country: country || "Bilinmiyor" };
+            const svService = new window.google.maps.StreetViewService();
+            svService.getPanorama({
+                location: { lat: searchLat, lng: searchLng },
+                radius: 5000, // 5km yarıçap
+                preference: window.google.maps.StreetViewPreference.NEAREST,
+                source: window.google.maps.StreetViewSource.OUTDOOR
+            }, (data, status) => {
+                if (status === 'OK' && data && data.location && data.location.latLng) {
+                    if (!data.links || data.links.length < 2) {
+                        console.warn("⚠️ Street View bulundu ama hareket kısıtlı. Tekrar deneniyor...");
+                        handleStartGame(attempts + 1);
+                        return;
                     }
-
-                    // Pano ID ve Location Info'yu gönder
+                    console.log(`✅ Custom StreetView bulundu!`);
+                    const loc = data.location.latLng;
                     socketRef.current.emit('start-game', {
                         roomId,
                         narratorLocation: {
@@ -304,22 +346,164 @@ function App() {
                             lng: loc.lng(),
                             panoId: data.location.pano
                         },
-                        locationInfo // Yeni eklenen bilgi
+                        locationInfo: {
+                            city: randomLoc.name,
+                            country: "Özel Konum"
+                        }
                     });
-                });
-            } else {
-                console.warn(`⚠️ Valid Street View not found in ${selectedRegion.name}, retrying...`, status);
-                handleStartGame(attempts + 1);
+                } else {
+                    console.warn(`⚠️ Valid Street View not found in ${randomLoc.name}, retrying...`, status);
+                    handleStartGame(attempts + 1);
+                }
+            });
+            return;
+        }
+
+
+        // ... inside App component
+
+        // --- MOD 2: BAŞKENTLER (CAPITALS) ---
+        if (gameMode === 'CAPITALS') {
+            const randomCapital = CAPITALS_LIST[Math.floor(Math.random() * CAPITALS_LIST.length)];
+            console.log(`Searching for StreetView in Capital: ${randomCapital.city}, ${randomCapital.country}`);
+
+            const svService = new window.google.maps.StreetViewService();
+            // Başkentlerde radius'u daha küçük tutabiliriz, çünkü şehir merkezi genelde çekilidir.
+            // 5km (5000m) yarıçap genelde iyidir.
+            svService.getPanorama({
+                location: { lat: randomCapital.lat, lng: randomCapital.lng },
+                radius: 5000,
+                preference: window.google.maps.StreetViewPreference.NEAREST,
+                source: window.google.maps.StreetViewSource.OUTDOOR
+            }, (data, status) => {
+                if (status === 'OK' && data && data.location && data.location.latLng) {
+                    // KONTROL: Hareket edilebilir mi?
+                    if (!data.links || data.links.length < 2) {
+                        console.warn("⚠️ Street View bulundu ama hareket kısıtlı. Tekrar deneniyor...");
+                        handleStartGame(attempts + 1);
+                        return;
+                    }
+
+                    console.log(`✅ Capital StreetView bulundu!`);
+                    const loc = data.location.latLng;
+
+                    // Direkt olarak bildiğimiz lokasyon bilgisini gönderelim (Geocoder'a gerek yok)
+                    socketRef.current.emit('start-game', {
+                        roomId,
+                        narratorLocation: {
+                            lat: loc.lat(),
+                            lng: loc.lng(),
+                            panoId: data.location.pano
+                        },
+                        locationInfo: {
+                            city: randomCapital.city,
+                            country: randomCapital.country
+                        }
+                    });
+                } else {
+                    console.warn(`⚠️ Valid Street View not found in ${randomCapital.city}, retrying...`, status);
+                    handleStartGame(attempts + 1);
+                }
+            });
+            return; // Fonksiyondan çık, WORLD moduna girmesin
+        }
+
+        // --- MOD 1: TÜM DÜNYA (WORLD) ---
+        if (gameMode === 'WORLD') {
+            // DÜNYA GENELİ RASTGELE KONUM ALGORİTMASI
+            // Okyanuslardan kaçınmak için kabaca kıta kutuları (Bounding Boxes) tanımlıyoruz.
+            const regions = [
+                { name: "Europe", latMin: 35, latMax: 70, lngMin: -10, lngMax: 40, weight: 4 },
+                { name: "North America", latMin: 25, latMax: 70, lngMin: -130, lngMax: -60, weight: 3 },
+                { name: "Asia", latMin: 10, latMax: 70, lngMin: 40, lngMax: 140, weight: 4 },
+                { name: "South America", latMin: -55, latMax: 15, lngMin: -80, lngMax: -35, weight: 2 },
+                { name: "Australia", latMin: -45, latMax: -10, lngMin: 110, lngMax: 155, weight: 2 },
+                { name: "Africa", latMin: -35, latMax: 35, lngMin: -20, lngMax: 50, weight: 1 } // Street view az
+            ];
+
+            // Ağırlıklı rastgele seçim
+            const totalWeight = regions.reduce((sum, r) => sum + r.weight, 0);
+            let randomVal = Math.random() * totalWeight;
+            let selectedRegion = regions[regions.length - 1];
+
+            for (const region of regions) {
+                randomVal -= region.weight;
+                if (randomVal <= 0) {
+                    selectedRegion = region;
+                    break;
+                }
             }
-        });
+
+            const randomLat = selectedRegion.latMin + Math.random() * (selectedRegion.latMax - selectedRegion.latMin);
+            const randomLng = selectedRegion.lngMin + Math.random() * (selectedRegion.lngMax - selectedRegion.lngMin);
+
+            console.log(`Searching for StreetView in ${selectedRegion.name} at:`, randomLat, randomLng);
+
+            const svService = new window.google.maps.StreetViewService();
+            svService.getPanorama({
+                location: { lat: randomLat, lng: randomLng },
+                radius: 100000, // 100km yarıçap (Issız yerlerde bile en yakın yolu bulsun)
+                preference: window.google.maps.StreetViewPreference.NEAREST,
+                source: window.google.maps.StreetViewSource.OUTDOOR
+            }, (data, status) => {
+                if (status === 'OK' && data && data.location && data.location.latLng) {
+                    // KONTROL: Hareket edilebilir mi? (Link sayısı)
+                    if (!data.links || data.links.length < 2) {
+                        // En az 2 link olsun ki sıkışmayalım (Opsiyonel, duruma göre 1 de olabilir)
+                        console.warn("⚠️ Street View bulundu ama hareket kısıtlı. Tekrar deneniyor...");
+                        handleStartGame(attempts + 1);
+                        return;
+                    }
+
+                    console.log(`✅ StreetView bulundu! Link sayısı: ${data.links.length}`);
+                    const loc = data.location.latLng;
+
+                    // Geocoder ile yer ismini bul (Şehir, Ülke)
+                    const geocoder = new window.google.maps.Geocoder();
+                    geocoder.geocode({ location: loc }, (results, status) => {
+                        let locationInfo = { city: "Bilinmiyor", country: "Bilinmiyor" };
+                        if (status === 'OK' && results[0]) {
+                            // Basitçe adres bileşenlerinden bulalım
+                            const components = results[0].address_components;
+                            let city = "";
+                            let country = "";
+
+                            for (const comp of components) {
+                                if (comp.types.includes("locality") || comp.types.includes("administrative_area_level_1")) {
+                                    if (!city) city = comp.long_name;
+                                }
+                                if (comp.types.includes("country")) {
+                                    country = comp.long_name;
+                                }
+                            }
+                            locationInfo = { city: city || "Bilinmiyor", country: country || "Bilinmiyor" };
+                        }
+
+                        // Pano ID ve Location Info'yu gönder
+                        socketRef.current.emit('start-game', {
+                            roomId,
+                            narratorLocation: {
+                                lat: loc.lat(),
+                                lng: loc.lng(),
+                                panoId: data.location.pano
+                            },
+                            locationInfo // Yeni eklenen bilgi
+                        });
+                    });
+                } else {
+                    console.warn(`⚠️ Valid Street View not found in ${selectedRegion.name}, retrying...`, status);
+                    handleStartGame(attempts + 1);
+                }
+            });
+        }
     };
 
     // 0. Room Join Effect
     useEffect(() => {
         if (uiMode === 'waiting' && socketRef.current && roomId) {
-            socketRef.current.emit('join-room', { roomId, username });
+            socketRef.current.emit('join-room', { roomId, username, isCreator });
         }
-    }, [uiMode, roomId, username]);
+    }, [uiMode, roomId, username, isCreator]);
 
     useEffect(() => {
         try {
@@ -355,6 +539,8 @@ function App() {
                 teleportRightsRef.current = 3;
                 setIsLoading(false); // Oyun başladı, loading kapat
                 setHasGameStartedOnce(true); // Oyun başladı işareti
+                setHasVotedToEnd(false); // Oyları sıfırla
+                setEndRoundVotes([]); // Oy listesini temizle
 
                 // Show Narrator Start Location
                 if (data.initialPositions[data.narratorId]) {
@@ -461,6 +647,17 @@ function App() {
                 // Sesli uyarı eklenebilir
             });
 
+            // OY VERİLDİ (Round'u bitir)
+            socketRef.current.on('vote-end-round', (data) => {
+                setEndRoundVotes(data.votes); // data.votes is Array
+            });
+
+            // ROUND ERKEN BİTTİ
+            socketRef.current.on('round-ended-early', () => {
+                // Oyun bitmiş gibi davran, sonuçlar gelecek
+                console.log('Round oylarla erken bitti!');
+            });
+
             socketRef.current.on('current-players', (list) => {
                 setOtherPlayers(prev => {
                     const newMap = new Map(prev); // Eski verileri koru
@@ -507,6 +704,13 @@ function App() {
                 setIsLoading(false);
             });
 
+            // GAME MODE CHANGED (Host değiştirdiğinde)
+            socketRef.current.on('game-mode-changed', ({ gameMode: newMode }) => {
+                console.log(`🎮 Oyun modu değişti: ${newMode}`);
+                setGameMode(newMode);
+            });
+
+
             socketRef.current.on('player-disconnected', (playerId) => {
                 setOtherPlayers(prev => {
                     const newMap = new Map(prev);
@@ -525,42 +729,20 @@ function App() {
             });
 
             socketRef.current.on('disconnect', () => setIsConnected(false));
+
+            // ODA HATASI (Geçersiz kod vb.)
+            socketRef.current.on('room-error', (data) => {
+                setErrorMsg(data.message);
+                setUiMode('lobby');
+                setIsLoading(false);
+                setRoomId(null);
+                sessionStorage.removeItem('geoFind_session');
+            });
         } catch (err) { console.error(err); }
         return () => socketRef.current?.disconnect();
     }, []);
 
-    // Initial Location Reveal Logic
-    useEffect(() => {
-        if (showStartLocation && narratorStartPos && window.google) {
-            const timer = setTimeout(() => {
-                if (startLocationMapRef.current) {
-                    const map = new window.google.maps.Map(startLocationMapRef.current, {
-                        center: narratorStartPos,
-                        zoom: 15,
-                        disableDefaultUI: true,
-                        styles: [
-                            { featureType: "all", elementType: "labels", stylers: [{ visibility: "off" }] },
-                            { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
-                            { featureType: "water", elementType: "geometry", stylers: [{ color: "#00bfff" }] }
-                        ]
-                    });
-                    new window.google.maps.Marker({
-                        position: narratorStartPos,
-                        map: map,
-                        icon: {
-                            path: window.google.maps.SymbolPath.CIRCLE,
-                            scale: 10,
-                            fillColor: "#FF4444",
-                            fillOpacity: 1,
-                            strokeColor: "white",
-                            strokeWeight: 2,
-                        }
-                    });
-                }
-            }, 100);
-            return () => clearTimeout(timer);
-        }
-    }, [showStartLocation, narratorStartPos]);
+
 
     // Minimap Resize Trigger
     useEffect(() => {
@@ -1042,18 +1224,20 @@ function App() {
 
                         const map = new window.google.maps.Map(mapDiv, mapOptions);
 
-                        new window.google.maps.Marker({
-                            position: narratorStartPos,
+                        // KOCAMAN DAİRE (200m) - Güncellendi
+                        const circle = new window.google.maps.Circle({
+                            center: narratorStartPos,
+                            radius: 200,
                             map: map,
-                            icon: {
-                                path: window.google.maps.SymbolPath.CIRCLE,
-                                scale: 10,
-                                fillColor: "#FF4444",
-                                fillOpacity: 1,
-                                strokeColor: "white",
-                                strokeWeight: 2,
-                            }
+                            fillColor: '#FF8800',
+                            fillOpacity: 0.4,
+                            strokeColor: '#FF8800',
+                            strokeOpacity: 0.9,
+                            strokeWeight: 4
                         });
+
+                        // Daireyi sığdır
+                        map.fitBounds(circle.getBounds());
                         console.log("✅ Harita Başarıyla Oluşturuldu");
                     } catch (err) {
                         console.error("❌ Harita Hatası:", err);
@@ -1090,428 +1274,509 @@ function App() {
         return `${m}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
-    if (uiMode !== 'game' && !DEV_MODE) {
-        return (
-            <Lobby
-                onJoin={handleJoinGame}
-                mode={uiMode}
-                roomId={roomId}
-                isCreator={isCreator}
-                participants={Array.from(otherPlayers.values())}
-                onStart={handleStartGame}
-                myUsername={username}
-                myColor={myColor}
-                isLoading={isLoading}
-                isIntermission={hasGameStartedOnce}
-            />
-        );
-    }
-
     return (
         <div className="app">
-            {/* ROLE REVEAL SCREEN */}
-            {isUiVisible && showRoleReveal && (
-                <div style={{
-                    position: 'fixed',
-                    top: 0, left: 0, width: '100%', height: '100%',
-                    background: 'rgba(0,0,0,0.5)', // %50 Siyah
-                    zIndex: 9999,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontFamily: "'Fredoka', sans-serif"
-                }}>
-                    <div style={{ fontSize: '2rem', letterSpacing: '5px', opacity: 0.8 }}>SENİN ROLÜN</div>
-                    <div style={{
-                        fontSize: '6rem',
-                        fontWeight: '900',
-                        color: role === 'narrator' ? '#FF4444' : '#00FFFF',
-                        letterSpacing: '2px',
-                        marginTop: '20px',
-                        transform: 'scale(1.1)'
-                    }}>
-                        {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
-                    </div>
-                    <div style={{ marginTop: '30px', color: '#aaa', fontSize: '1rem', fontStyle: 'italic' }}>
-                        {role === 'narrator' ? '"Konumu tarif et ve bulunmasını sağla!"' : '"Anlatıcıyı dinle ve konumu bul!"'}
-                    </div>
-                </div>
-            )}
-
-            {/* HUD (Top Center) */}
-            {isUiVisible && (
-                <div style={{
-                    position: 'absolute',
-                    top: 20,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    display: 'flex',
-                    gap: '20px',
-                    zIndex: 1001,
-                    opacity: showRoleReveal ? 0 : 1, // CSS Gizleme
-                    pointerEvents: showRoleReveal ? 'none' : 'auto',
-                    transition: 'opacity 0.5s ease'
-                }}>
-                    {/* Room Code Info */}
-                    <div style={{
-                        background: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(5px)',
-                        padding: '10px 20px',
-                        borderRadius: '10px',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: 'white',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
-                    }}>
-                        <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ODA</div>
-                        <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{roomId}</div>
-                    </div>
-
-                    {/* Timer & Status */}
-                    <div style={{
-                        background: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(5px)',
-                        padding: '10px 20px',
-                        borderRadius: '10px',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: 'white',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                        minWidth: '120px'
-                    }}>
-                        <div style={{ fontSize: '0.8rem', color: narratorFound ? '#ff4444' : '#aaa' }}>
-                            {narratorFound ? 'ANLATICI BULUNDU!' : 'SÜRE'}
-                        </div>
+            {uiMode !== 'game' && !DEV_MODE ? (
+                <Lobby
+                    onJoin={handleJoinGame}
+                    mode={uiMode}
+                    roomId={roomId}
+                    isCreator={isCreator}
+                    participants={Array.from(otherPlayers.values())}
+                    onStart={handleStartGame}
+                    myUsername={username}
+                    myColor={myColor}
+                    isLoading={isLoading}
+                    isIntermission={hasGameStartedOnce}
+                    onLeave={handleReturnToLobby}
+                    gameMode={gameMode}
+                    setGameMode={handleGameModeChange}
+                    customLocations={customLocations}
+                    setCustomLocations={setCustomLocations}
+                />
+            ) : (
+                <>
+                    {/* ROLE REVEAL SCREEN */}
+                    {isUiVisible && showRoleReveal && (
                         <div style={{
-                            fontSize: '1.5rem',
-                            fontWeight: 'bold',
-                            fontFamily: 'monospace',
-                            color: narratorFound ? '#ff4444' : '#ffffff'
+                            position: 'fixed',
+                            top: 0, left: 0, width: '100%', height: '100%',
+                            background: 'rgba(0,0,0,0.5)', // %50 Siyah
+                            zIndex: 9999,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            fontFamily: "'Fredoka', sans-serif"
                         }}>
-                            {formatTime(timeLeft)}
-                        </div>
-                    </div>
-
-                    {/* Role Info */}
-                    <div style={{
-                        background: 'rgba(0,0,0,0.6)',
-                        backdropFilter: 'blur(5px)',
-                        padding: '10px 20px',
-                        borderRadius: '10px',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: 'white',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
-                    }}>
-                        <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ROLÜN</div>
-                        <div style={{ fontWeight: 'bold', color: role === 'narrator' ? '#ff4444' : '#00ffff' }}>
-                            {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* MINIMAP */}
-            {
-                isUiVisible && (
-                    <div className="minimap-wrapper" style={{
-                        top: 0,
-                        left: 0,
-                        width: isMinimapMaximized ? '60vw' : 200,
-                        height: isMinimapMaximized ? '40vw' : 200, // Dikdörtgen oran
-                        borderRadius: 0,
-                        borderTop: 'none',
-                        borderLeft: 'none',
-                        borderRight: '1px solid #333',
-                        borderBottom: '1px solid #333',
-                        background: '#0a0e1a',
-                        boxShadow: isMinimapMaximized ? '0 0 50px rgba(0,0,0,0.5)' : 'none',
-                        zIndex: isMinimapMaximized ? 2000 : 10,
-                        transition: 'all 0.3s ease',
-                        opacity: showRoleReveal ? 0 : 1, // CSS Gizleme (Map instance korunsun diye)
-                        pointerEvents: showRoleReveal ? 'none' : 'auto'
-                    }}>
-                        <div key={`minimap-${roundKey}`} ref={minimapRef} className="minimap-content"></div>
-                        <div className="player-marker-ui" style={{
-                            // SVG Rotasyonu. CSS'teki transformu ezer, o yüzden translate'i de ekliyoruz.
-                            transform: `translate(-50%, -50%) rotate(${heading}deg)`
-                        }}>
-                            {/* Neon filtresi kaldırıldı */}
-                            <svg width="100%" height="100%" viewBox="0 0 24 24" style={{ overflow: 'visible' }}>
-                                {/* Beyaz Çerçeveli İçeren Damla - Orta Boy, Daha Yumuşak (Tatlış) */}
-                                <path
-                                    d="M 12 -2 C 12 -2 20 5 20 12 A 8 8 0 1 1 4 12 C 4 5 12 -2 12 -2 Z"
-                                    fill={myColor}
-                                    stroke="#ffffff"
-                                    strokeWidth="2"
-                                    strokeLinejoin="round"
-                                />
-                            </svg>
-                        </div>
-
-                        {/* Işınlanma Hakkı Göstergesi (Sadece Maximized iken) */}
-                        {isMinimapMaximized && (
+                            <div style={{ fontSize: '2rem', letterSpacing: '5px', opacity: 0.8 }}>SENİN ROLÜN</div>
                             <div style={{
-                                position: 'absolute',
-                                bottom: 5,
-                                left: 5,
-                                background: 'rgba(0,0,0,0.6)',
-                                color: teleportRights > 0 ? '#00ff88' : '#ff4444',
-                                padding: '5px 10px',
-                                borderRadius: '5px',
-                                fontSize: '0.8rem',
-                                fontWeight: 'bold',
-                                border: '1px solid rgba(255,255,255,0.2)',
-                                zIndex: 2002
+                                fontSize: '6rem',
+                                fontWeight: '900',
+                                color: role === 'narrator' ? '#FF4444' : '#00FFFF',
+                                letterSpacing: '2px',
+                                marginTop: '20px',
+                                transform: 'scale(1.1)'
                             }}>
-                                Işınlanma: {teleportRights}
+                                {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
                             </div>
-                        )}
-
-                        {/* Maximize/Minimize Button */}
-                        <button
-                            onClick={() => setIsMinimapMaximized(!isMinimapMaximized)}
-                            style={{
-                                position: 'absolute',
-                                bottom: 5,
-                                right: 5,
-                                width: '30px',
-                                height: '30px',
-                                background: 'rgba(0,0,0,0.6)',
-                                color: 'white',
-                                border: '1px solid rgba(255,255,255,0.3)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '1.2rem',
-                                zIndex: 2001
-                            }}
-                            title={isMinimapMaximized ? "Küçült" : "Büyüt"}
-                        >
-                            {isMinimapMaximized ? '↙' : '⤢'}
-                        </button>
-                    </div>
-                )
-            }
-
-            <div key={`streetview-${roundKey}`} ref={mapRef} className="street-view">
-                {!isMapLoaded && <div style={{ color: 'white', textAlign: 'center', paddingTop: 100 }}>Yükleniyor...</div>}
-            </div>
-
-
-
-
-            {/* GAME START LOCATION REVEAL (15 SECONDS) */}
-            {
-                isUiVisible && showStartLocation && !showRoleReveal && (
-                    <div style={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        width: '600px',
-                        height: '450px',
-                        zIndex: 2500,
-                        background: 'rgba(0,0,0,0.9)',
-                        padding: '20px',
-                        borderRadius: '20px',
-                        boxShadow: '0 0 70px rgba(0,0,0,0.9)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        border: '1px solid rgba(255,255,255,0.1)'
-                    }}>
-                        {/* Close Button */}
-                        <button
-                            onClick={() => setShowStartLocation(false)}
-                            style={{
-                                position: 'absolute',
-                                top: '15px',
-                                right: '15px',
-                                background: 'rgba(255,255,255,0.1)',
-                                border: 'none',
-                                color: 'white',
-                                fontSize: '1.2rem',
-                                width: '30px',
-                                height: '30px',
-                                borderRadius: '50%',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => e.target.style.background = 'rgba(255,0,0,0.5)'}
-                            onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                        >
-                            ✕
-                        </button>
-
-                        <div style={{ color: 'white', fontSize: '1.5rem', marginBottom: '15px', fontWeight: 'bold', letterSpacing: '1px' }}>
-                            ANLATICI BURADA BAŞLIYOR!
+                            <div style={{ marginTop: '30px', color: '#aaa', fontSize: '1rem', fontStyle: 'italic' }}>
+                                {role === 'narrator' ? '"Konumu tarif et ve bulunmasını sağla!"' : '"Anlatıcıyı dinle ve konumu bul!"'}
+                            </div>
                         </div>
+                    )}
 
-                        {/* Map Wrapper to clip Google UI elements */}
+                    {/* HUD (Top Center) */}
+                    {isUiVisible && (
                         <div style={{
-                            width: '560px',
-                            height: '300px',
-                            borderRadius: '12px',
-                            overflow: 'hidden', // Magic: clip children
-                            position: 'relative',
-                            border: '1px solid rgba(255,255,255,0.2)'
+                            position: 'absolute',
+                            top: 20,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            gap: '20px',
+                            zIndex: 1001,
+                            opacity: showRoleReveal ? 0 : 1, // CSS Gizleme
+                            pointerEvents: showRoleReveal ? 'none' : 'auto',
+                            transition: 'opacity 0.5s ease'
                         }}>
-                            <div
-                                ref={startLocationMapRef}
+                            {/* Room Code Info */}
+                            <div style={{
+                                background: 'rgba(0,0,0,0.6)',
+                                backdropFilter: 'blur(5px)',
+                                padding: '10px 20px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: 'white',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ODA</div>
+                                <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{roomId}</div>
+                            </div>
+
+                            {/* Timer & Status */}
+                            <div style={{
+                                background: 'rgba(0,0,0,0.6)',
+                                backdropFilter: 'blur(5px)',
+                                padding: '10px 20px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: 'white',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                                minWidth: '120px'
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: narratorFound ? '#ff4444' : '#aaa' }}>
+                                    {narratorFound ? 'ANLATICI BULUNDU!' : 'SÜRE'}
+                                </div>
+                                <div style={{
+                                    fontSize: '1.5rem',
+                                    fontWeight: 'bold',
+                                    fontFamily: 'monospace',
+                                    color: narratorFound ? '#ff4444' : '#ffffff'
+                                }}>
+                                    {formatTime(timeLeft)}
+                                </div>
+                            </div>
+
+                            {/* Role Info */}
+                            <div style={{
+                                background: 'rgba(0,0,0,0.6)',
+                                backdropFilter: 'blur(5px)',
+                                padding: '10px 20px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: 'white',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: '#aaa' }}>ROLÜN</div>
+                                <div style={{ fontWeight: 'bold', color: role === 'narrator' ? '#ff4444' : '#00ffff' }}>
+                                    {role === 'narrator' ? 'ANLATICI' : 'ARAYICI'}
+                                </div>
+                            </div>
+
+                            {/* Round'u Bitir Button */}
+                            <button
+                                onClick={() => {
+                                    if (!hasVotedToEnd && socketRef.current) {
+                                        socketRef.current.emit('vote-end-round', { roomId });
+                                        setHasVotedToEnd(true);
+                                    }
+                                }}
+                                disabled={hasVotedToEnd}
                                 style={{
-                                    width: '100%',
-                                    height: '115%', // Make taller to push footer down
-                                    marginTop: '-5px',
-                                    backgroundColor: '#111'
+                                    background: hasVotedToEnd ? 'rgba(0,255,0,0.3)' : 'rgba(255,100,0,0.6)',
+                                    backdropFilter: 'blur(5px)',
+                                    padding: '10px 20px',
+                                    borderRadius: '10px',
+                                    border: hasVotedToEnd ? '1px solid rgba(0,255,0,0.5)' : '1px solid rgba(255,255,255,0.2)',
+                                    color: 'white',
+                                    cursor: hasVotedToEnd ? 'not-allowed' : 'pointer',
+                                    fontWeight: 'bold',
+                                    fontSize: '0.9rem',
+                                    boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                                    transition: 'all 0.3s ease',
+                                    opacity: hasVotedToEnd ? 0.7 : 1
                                 }}
                             >
-                                <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>Harita Yükleniyor...</div>
-                            </div>
+                                {hasVotedToEnd ? '✓ OY VERİLDİ' : 'ROUND\'U BİTİR'}
+                                <div style={{ fontSize: '0.7rem', marginTop: '2px', color: '#ffaa00' }}>
+                                    {endRoundVotes.length}/{otherPlayers.size + 1} oy
+                                </div>
+                            </button>
                         </div>
+                    )}
 
-                        <div style={{ color: '#00ffff', marginTop: '15px', fontSize: '1.1rem', fontWeight: '500' }}>
-                            Dikkatli bakın! <span style={{ color: '#fff', fontSize: '1.3rem', margin: '0 5px' }}>{revealTimeLeft}</span> saniye kaldı...
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* SETTINGS BUTTON - Fixed Positioning */}
-            {
-                isUiVisible && (
-                    <div style={{
-                        position: 'absolute', bottom: 20, left: 20, zIndex: 2000,
-                        opacity: showRoleReveal ? 0 : 1,
-                        pointerEvents: showRoleReveal ? 'none' : 'auto',
-                        transition: 'opacity 0.5s ease'
-                    }}>
-                        <button
-                            className="settings-btn"
-                            onClick={() => setIsSettingsOpen(true)}
-                        >
-                            ⚙️ Ayarlar
-                        </button>
-                    </div>
-                )
-            }
-
-            {/* GAME OVER MODAL */}
-            {
-                isUiVisible && gameOverData && (
-                    <div className="lobby-container" style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)' }}>
-                        <div className="lobby-card" style={{ maxWidth: '600px', padding: '2rem' }}>
-                            <h1 className="game-title" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
-                                {gameOverData.reason === 'narrator_found' ? 'ANLATICI YAKALANDI!' : 'SÜRE DOLDU!'}
-                            </h1>
-                            <div className="game-subtitle" style={{ fontSize: '1.2rem', color: gameOverData.reason === 'narrator_found' ? '#00ff88' : '#ff4444' }}>
-                                {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
-                            </div>
-
-                            {/* KONUM BİLGİSİ */}
-                            {gameOverData.locationInfo && (
-                                <div style={{
-                                    marginTop: '10px',
-                                    padding: '10px',
-                                    background: 'rgba(255,255,255,0.1)',
-                                    borderRadius: '8px',
-                                    textAlign: 'center'
+                    {/* MINIMAP */}
+                    {
+                        isUiVisible && (
+                            <div className="minimap-wrapper" style={{
+                                top: 0,
+                                left: 0,
+                                width: isMinimapMaximized ? '60vw' : 200,
+                                height: isMinimapMaximized ? '40vw' : 200, // Dikdörtgen oran
+                                borderRadius: 0,
+                                borderTop: 'none',
+                                borderLeft: 'none',
+                                borderRight: '1px solid #333',
+                                borderBottom: '1px solid #333',
+                                background: '#0a0e1a',
+                                boxShadow: isMinimapMaximized ? '0 0 50px rgba(0,0,0,0.5)' : 'none',
+                                zIndex: isMinimapMaximized ? 2000 : 10,
+                                transition: 'all 0.3s ease',
+                                opacity: showRoleReveal ? 0 : 1, // CSS Gizleme (Map instance korunsun diye)
+                                pointerEvents: showRoleReveal ? 'none' : 'auto'
+                            }}>
+                                <div key={`minimap-${roundKey}`} ref={minimapRef} className="minimap-content"></div>
+                                <div className="player-marker-ui" style={{
+                                    // SVG Rotasyonu. CSS'teki transformu ezer, o yüzden translate'i de ekliyoruz.
+                                    transform: `translate(-50%, -50%) rotate(${heading}deg)`
                                 }}>
-                                    <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
-                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
-                                        {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
-                                    </div>
-                                </div>
-                            )}
-
-                            <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                {/* ANLATICI BÖLÜMÜ */}
-                                <div>
-                                    <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
-                                        ANLATICI
-                                    </div>
-                                    {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
-                                        <div key={`narrator-${i}`} style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            padding: '10px',
-                                            background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                            marginBottom: '5px',
-                                            borderRadius: '5px',
-                                            border: s.isWinner ? '1px solid #00ff88' : 'none'
-                                        }}>
-                                            <div style={{ display: 'flex', gap: '10px' }}>
-                                                <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
-                                            </div>
-                                            <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
-                                        </div>
-                                    ))}
+                                    {/* Neon filtresi kaldırıldı */}
+                                    <svg width="100%" height="100%" viewBox="0 0 24 24" style={{ overflow: 'visible' }}>
+                                        {/* Beyaz Çerçeveli İçeren Damla - Orta Boy, Daha Yumuşak (Tatlış) */}
+                                        <path
+                                            d="M 12 -2 C 12 -2 20 5 20 12 A 8 8 0 1 1 4 12 C 4 5 12 -2 12 -2 Z"
+                                            fill={myColor}
+                                            stroke="#ffffff"
+                                            strokeWidth="2"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
                                 </div>
 
-                                {/* ARAYICILAR BÖLÜMÜ */}
-                                <div>
-                                    <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
-                                        ARAYICILAR
+                                {/* Işınlanma Hakkı Göstergesi (Sadece Maximized iken) */}
+                                {isMinimapMaximized && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        bottom: 5,
+                                        left: 5,
+                                        background: 'rgba(0,0,0,0.6)',
+                                        color: teleportRights > 0 ? '#00ff88' : '#ff4444',
+                                        padding: '5px 10px',
+                                        borderRadius: '5px',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 'bold',
+                                        border: '1px solid rgba(255,255,255,0.2)',
+                                        zIndex: 2002
+                                    }}>
+                                        Işınlanma: {teleportRights}
                                     </div>
-                                    {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
-                                        <div key={`seeker-${i}`} style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            padding: '10px',
-                                            background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
-                                            marginBottom: '5px',
-                                            borderRadius: '5px',
-                                            border: s.isWinner ? '1px solid #00ff88' : 'none'
-                                        }}>
-                                            <div style={{ display: 'flex', gap: '10px' }}>
-                                                <span style={{ color: '#aaa' }}>#{i + 1}</span>
-                                                <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
-                                            </div>
-                                            <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
-                                        </div>
-                                    ))}
+                                )}
+
+                                {/* Maximize/Minimize Button */}
+                                <button
+                                    onClick={() => setIsMinimapMaximized(!isMinimapMaximized)}
+                                    style={{
+                                        position: 'absolute',
+                                        bottom: 5,
+                                        right: 5,
+                                        width: '30px',
+                                        height: '30px',
+                                        background: 'rgba(0,0,0,0.6)',
+                                        color: 'white',
+                                        border: '1px solid rgba(255,255,255,0.3)',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '1.2rem',
+                                        zIndex: 2001
+                                    }}
+                                    title={isMinimapMaximized ? "Küçült" : "Büyüt"}
+                                >
+                                    {isMinimapMaximized ? '↙' : '⤢'}
+                                </button>
+                            </div>
+                        )
+                    }
+
+                    <div key={`streetview-${roundKey}`} ref={mapRef} className="street-view">
+                        {!isMapLoaded && <div style={{ color: 'white', textAlign: 'center', paddingTop: 100 }}>Yükleniyor...</div>}
+                    </div>
+
+
+
+
+                    {/* GAME START LOCATION REVEAL (15 SECONDS) */}
+                    {
+                        isUiVisible && showStartLocation && !showRoleReveal && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                width: '600px',
+                                height: '450px',
+                                zIndex: 2500,
+                                background: 'rgba(0,0,0,0.9)',
+                                padding: '20px',
+                                borderRadius: '20px',
+                                boxShadow: '0 0 70px rgba(0,0,0,0.9)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                border: '1px solid rgba(255,255,255,0.1)'
+                            }}>
+                                {/* Close Button */}
+                                <button
+                                    onClick={() => setShowStartLocation(false)}
+                                    style={{
+                                        position: 'absolute',
+                                        top: '15px',
+                                        right: '15px',
+                                        background: 'rgba(255,255,255,0.1)',
+                                        border: 'none',
+                                        color: 'white',
+                                        fontSize: '1.2rem',
+                                        width: '30px',
+                                        height: '30px',
+                                        borderRadius: '50%',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.target.style.background = 'rgba(255,0,0,0.5)'}
+                                    onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                >
+                                    ✕
+                                </button>
+
+                                <div style={{ color: 'white', fontSize: '1.5rem', marginBottom: '15px', fontWeight: 'bold', letterSpacing: '1px', textAlign: 'center' }}>
+                                    ANLATICI: {narratorId === myId ? 'Sensin' : (otherPlayers.get(narratorId)?.username || 'Bilinmiyor')}
+                                </div>
+                                <div style={{ color: '#00ffff', fontSize: '1rem', marginBottom: '15px' }}>
+                                    Burada başlıyor!
+                                </div>
+
+                                {/* Map Wrapper to clip Google UI elements */}
+                                <div style={{
+                                    width: '560px',
+                                    height: '300px',
+                                    borderRadius: '12px',
+                                    overflow: 'hidden', // Magic: clip children
+                                    position: 'relative',
+                                    border: '1px solid rgba(255,255,255,0.2)'
+                                }}>
+                                    <div
+                                        ref={startLocationMapRef}
+                                        style={{
+                                            width: '100%',
+                                            height: '115%', // Make taller to push footer down
+                                            marginTop: '-5px',
+                                            backgroundColor: '#111'
+                                        }}
+                                    >
+                                        <div style={{ color: 'white', padding: '20px', textAlign: 'center' }}>Harita Yükleniyor...</div>
+                                    </div>
+                                </div>
+
+                                <div style={{ color: '#00ffff', marginTop: '15px', fontSize: '1.1rem', fontWeight: '500' }}>
+                                    Dikkatli bakın! <span style={{ color: '#fff', fontSize: '1.3rem', margin: '0 5px' }}>{revealTimeLeft}</span> saniye kaldı...
                                 </div>
                             </div>
+                        )
+                    }
 
-                            {(isCreator || gameOverData.isFinalGameEnd) && (
+                    {/* SETTINGS BUTTON - Fixed Positioning */}
+                    {
+                        isUiVisible && (
+                            <div style={{
+                                position: 'absolute', bottom: 20, left: 20, zIndex: 2000,
+                                opacity: showRoleReveal ? 0 : 1,
+                                pointerEvents: showRoleReveal ? 'none' : 'auto',
+                                transition: 'opacity 0.5s ease',
+                                display: 'flex',
+                                gap: '10px'
+                            }}>
                                 <button
-                                    className="join-btn"
-                                    onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
-                                    style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
+                                    className="settings-btn"
+                                    onClick={() => setIsSettingsOpen(true)}
                                 >
-                                    {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
+                                    ⚙️ Ayarlar
                                 </button>
-                            )}
-                            {!isCreator && !gameOverData.isFinalGameEnd && (
-                                <div style={{ color: '#aaa', marginTop: '10px' }}>
-                                    Oda kurucusunun yeni turu başlatması bekleniyor...
+                                <button
+                                    onClick={() => setShowReturnConfirm(true)}
+                                    style={{
+                                        background: 'rgba(255, 50, 50, 0.6)',
+                                        backdropFilter: 'blur(5px)',
+                                        color: 'white',
+                                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                                        padding: '10px 15px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.9rem',
+                                        transition: 'all 0.2s',
+                                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '5px'
+                                    }}
+                                >
+                                    🚪 Lobiye Dön
+                                </button>
+                            </div>
+                        )
+                    }
+
+                    {/* GAME OVER MODAL */}
+                    {
+                        isUiVisible && gameOverData && (
+                            <div className="lobby-container" style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)' }}>
+                                <div className="lobby-card" style={{ maxWidth: '600px', padding: '2rem' }}>
+                                    <h1 className="game-title" style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>
+                                        {gameOverData.reason === 'narrator_found' ? 'ANLATICI YAKALANDI!' : 'SÜRE DOLDU!'}
+                                    </h1>
+                                    <div className="game-subtitle" style={{ fontSize: '1.2rem', color: gameOverData.reason === 'narrator_found' ? '#00ff88' : '#ff4444' }}>
+                                        {gameOverData.reason === 'narrator_found' ? 'Arayıcılar Kazandı' : 'Anlatıcı Kazandı'}
+                                    </div>
+
+                                    {/* KONUM BİLGİSİ */}
+                                    {gameOverData.locationInfo && (
+                                        <div style={{
+                                            marginTop: '10px',
+                                            padding: '10px',
+                                            background: 'rgba(255,255,255,0.1)',
+                                            borderRadius: '8px',
+                                            textAlign: 'center'
+                                        }}>
+                                            <div style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '2px' }}>KONUM</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'white' }}>
+                                                {gameOverData.locationInfo.city}, {gameOverData.locationInfo.country} 🌍
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* UYDU GÖRÜNTÜSÜ */}
+                                    {gameOverData.narratorLocation && (
+                                        <div style={{
+                                            marginTop: '15px',
+                                            padding: '10px',
+                                            background: 'rgba(0, 0, 0, 0.3)',
+                                            borderRadius: '12px',
+                                            border: '2px solid rgba(0, 255, 255, 0.3)'
+                                        }}>
+                                            <div style={{ fontSize: '0.85rem', color: '#00ffff', marginBottom: '8px', fontWeight: 'bold' }}>
+                                                📍 KONUM UYDU GÖRÜNTÜSÜ
+                                            </div>
+                                            <img
+                                                src={`https://maps.googleapis.com/maps/api/staticmap?center=${gameOverData.narratorLocation.lat},${gameOverData.narratorLocation.lng}&zoom=15&size=550x300&maptype=satellite&markers=color:red%7C${gameOverData.narratorLocation.lat},${gameOverData.narratorLocation.lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`}
+                                                alt="Konum Uydu Görüntüsü"
+                                                style={{
+                                                    width: '100%',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div style={{ margin: '2rem 0', textAlign: 'left', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                        {/* ANLATICI BÖLÜMÜ */}
+                                        <div>
+                                            <div style={{ color: '#ff4444', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(255,68,68,0.3)', paddingBottom: '5px' }}>
+                                                ANLATICI
+                                            </div>
+                                            {gameOverData.scores.filter(s => s.role === 'narrator').map((s, i) => (
+                                                <div key={`narrator-${i}`} style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    padding: '10px',
+                                                    background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                                    marginBottom: '5px',
+                                                    borderRadius: '5px',
+                                                    border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                                }}>
+                                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                                        <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                                    </div>
+                                                    <div style={{ fontWeight: 'bold', color: '#ff4444' }}>{s.score} Puan</div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* ARAYICILAR BÖLÜMÜ */}
+                                        <div>
+                                            <div style={{ color: '#00ffff', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid rgba(0,255,255,0.3)', paddingBottom: '5px' }}>
+                                                ARAYICILAR
+                                            </div>
+                                            {gameOverData.scores.filter(s => s.role === 'seeker').map((s, i) => (
+                                                <div key={`seeker-${i}`} style={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    padding: '10px',
+                                                    background: s.isWinner ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                                    marginBottom: '5px',
+                                                    borderRadius: '5px',
+                                                    border: s.isWinner ? '1px solid #00ff88' : 'none'
+                                                }}>
+                                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                                        <span style={{ color: '#aaa' }}>#{i + 1}</span>
+                                                        <span style={{ fontWeight: 'bold', color: 'white' }}>{s.username}</span>
+                                                    </div>
+                                                    <div style={{ fontWeight: 'bold', color: '#00ffff' }}>{s.score} Puan</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {(isCreator || gameOverData.isFinalGameEnd) && (
+                                        <button
+                                            className="join-btn"
+                                            onClick={gameOverData.isFinalGameEnd ? handleReturnToLobby : handleNextRound}
+                                            style={{ width: '100%', background: gameOverData.isFinalGameEnd ? '#333' : '#00ff88', color: gameOverData.isFinalGameEnd ? '#fff' : '#000', opacity: isLoading ? 0.7 : 1, pointerEvents: isLoading ? 'none' : 'auto' }}
+                                        >
+                                            {isLoading ? 'ARANIYOR...' : (gameOverData.isFinalGameEnd ? 'OYUNU BİTİR (LOBİYE DÖN)' : 'SONRAKİ TURA GEÇ')}
+                                        </button>
+                                    )}
+                                    {!isCreator && !gameOverData.isFinalGameEnd && (
+                                        <div style={{ color: '#aaa', marginTop: '10px' }}>
+                                            Oda kurucusunun yeni turu başlatması bekleniyor...
+                                        </div>
+                                    )}
+                                    {gameOverData.isFinalGameEnd && (
+                                        <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
+                                            🏆 Herkes anlatıcı görevini tamamladı!
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                            {gameOverData.isFinalGameEnd && (
-                                <div style={{ color: '#00ff88', marginTop: '15px', fontSize: '0.9rem', textAlign: 'center' }}>
-                                    🏆 Herkes anlatıcı görevini tamamladı!
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )
-            }
-
-
-
+                            </div>
+                        )
+                    }                </>
+            )}
 
             {/* AYARLAR PANELİ (MODAL) */}
             {
@@ -1657,7 +1922,132 @@ function App() {
                     </div>
                 )
             }
-        </div >
+            {/* RETURN TO LOBBY CONFIRMATION MODAL */}
+            {showReturnConfirm && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.85)',
+                    zIndex: 20000, // En üstte
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="lobby-card" style={{
+                        maxWidth: '400px',
+                        padding: '2rem',
+                        textAlign: 'center',
+                        position: 'relative' // lobby-card override'larını engellemek için
+                    }}>
+                        <div style={{ fontSize: '1.8rem', marginBottom: '1rem', fontWeight: 'bold', color: '#ff4444' }}>
+                            AYRILMAK İSTİYOR MUSUN?
+                        </div>
+                        <div style={{ color: 'rgba(255,255,255,0.7)', marginBottom: '2rem', fontSize: '1rem', lineHeight: '1.5' }}>
+                            Mevcut oyunun sonlanacak ve lobiden düşeceksin. Devam etmek istiyor musun?
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                            <button
+                                onClick={() => setShowReturnConfirm(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    color: 'white',
+                                    cursor: 'pointer',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'}
+                            >
+                                Vazgeç
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowReturnConfirm(false);
+                                    handleReturnToLobby();
+                                }}
+                                className="join-btn"
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    background: '#ff4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    boxShadow: '0 5px 15px rgba(255,68,68,0.3)'
+                                }}
+                            >
+                                Evet, Ayrıl
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ERROR MODAL */}
+            {errorMsg && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.85)',
+                    zIndex: 30000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backdropFilter: 'blur(10px)'
+                }}>
+                    <div className="lobby-card" style={{
+                        maxWidth: '400px',
+                        padding: '2.5rem',
+                        textAlign: 'center',
+                        border: '1px solid rgba(255, 68, 68, 0.3)',
+                        boxShadow: '0 0 30px rgba(255, 68, 68, 0.15)'
+                    }}>
+                        <div style={{
+                            width: '60px',
+                            height: '60px',
+                            background: 'rgba(255, 68, 68, 0.15)',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 1.5rem',
+                            fontSize: '2rem',
+                            color: '#ff4444',
+                            border: '2px solid #ff4444'
+                        }}>
+                            !
+                        </div>
+                        <div style={{ fontSize: '1.8rem', marginBottom: '1rem', fontWeight: 'bold', color: '#ff4444', letterSpacing: '1px' }}>
+                            BİR HATA OLUŞTU
+                        </div>
+                        <div style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '2.5rem', fontSize: '1.05rem', lineHeight: '1.6' }}>
+                            {errorMsg}
+                        </div>
+                        <button
+                            onClick={() => setErrorMsg(null)}
+                            className="join-btn"
+                            style={{
+                                width: '100%',
+                                padding: '14px',
+                                background: 'rgba(255,255,255,0.1)',
+                                color: 'white',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                fontSize: '1.1rem',
+                                fontWeight: 'bold'
+                            }}
+                            onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.2)'}
+                            onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                        >
+                            Anladım
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 

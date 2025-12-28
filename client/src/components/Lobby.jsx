@@ -71,10 +71,301 @@ const StreetViewBackground = () => {
     );
 };
 
-function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission }) {
+// Custom Location Panel Component
+const CustomLocationPanel = ({ customLocations, setCustomLocations, onClose }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const autocompleteServiceRef = useRef(null);
+    const placesServiceRef = useRef(null);
+
+    // Google Places Autocomplete Service'i başlat
+    useEffect(() => {
+        if (window.google && window.google.maps && window.google.maps.places) {
+            console.log('✅ Google Places API yüklendi');
+            autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+            // PlacesService için dummy div oluştur
+            const dummyDiv = document.createElement('div');
+            placesServiceRef.current = new window.google.maps.places.PlacesService(dummyDiv);
+        } else {
+            console.warn('⚠️ Google Places API henüz yüklenmedi');
+        }
+    }, []);
+
+    // API'dan öneri al
+    useEffect(() => {
+        if (searchQuery.trim().length > 1 && autocompleteServiceRef.current) {
+            const request = {
+                input: searchQuery,
+                types: ['(cities)'], // Sadece şehirler
+            };
+
+            console.log('🔍 Öneri aranıyor:', searchQuery);
+            autocompleteServiceRef.current.getPlacePredictions(request, (predictions, status) => {
+                console.log('📍 API Yanıt:', status, predictions);
+                if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+                    setSuggestions(predictions.slice(0, 5)); // İlk 5 öneri
+                    setShowSuggestions(true);
+                } else {
+                    console.warn('⚠️ Öneri bulunamadı:', status);
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                }
+            });
+        } else {
+            setSuggestions([]);
+            setShowSuggestions(false);
+        }
+    }, [searchQuery]);
+
+    const handleSelectSuggestion = (prediction) => {
+        // Place details'i al
+        if (!placesServiceRef.current) return;
+
+        placesServiceRef.current.getDetails(
+            { placeId: prediction.place_id },
+            (place, status) => {
+                if (status === window.google.maps.places.PlacesServiceStatus.OK && place.geometry) {
+                    const cityName = prediction.structured_formatting.main_text;
+
+                    // Duplicate check
+                    if (customLocations.some(l => l.name === cityName)) {
+                        alert("Bu konum zaten ekli!");
+                        return;
+                    }
+
+                    setCustomLocations(prev => [...prev, {
+                        name: cityName,
+                        lat: place.geometry.location.lat(),
+                        lng: place.geometry.location.lng()
+                    }]);
+                    setSearchQuery('');
+                    setShowSuggestions(false);
+                }
+            }
+        );
+    };
+
+    const handleAddLocation = () => {
+        if (!searchQuery.trim() || !window.google) return;
+        setIsSearching(true);
+        setShowSuggestions(false);
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ address: searchQuery }, (results, status) => {
+            setIsSearching(false);
+            if (status === 'OK' && results[0]) {
+                const loc = results[0].geometry.location;
+                const name = results[0].formatted_address.split(',')[0]; // Sadece şehir/yer adı
+
+                // Duplicate check
+                if (customLocations.some(l => l.name === name)) {
+                    alert("Bu konum zaten ekli!");
+                    return;
+                }
+
+                setCustomLocations(prev => [...prev, {
+                    name: name,
+                    lat: loc.lat(),
+                    lng: loc.lng()
+                }]);
+                setSearchQuery('');
+            } else {
+                alert("Konum bulunamadı!");
+            }
+        });
+    };
+
+    const handleRemoveLocation = (index) => {
+        setCustomLocations(prev => prev.filter((_, i) => i !== index));
+    };
+
+    return (
+        <div className="custom-location-panel" style={{
+            position: 'absolute',
+            bottom: '160px', /* Modes barın üstünde */
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '90%',
+            maxWidth: '400px',
+            background: 'rgba(20, 20, 30, 0.95)',
+            border: '1px solid rgba(0, 255, 255, 0.3)',
+            borderRadius: '15px',
+            padding: '15px',
+            zIndex: 100,
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 0 30px rgba(0,0,0,0.8)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            animation: 'fadeInUp 0.3s ease-out'
+        }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ color: '#00ffff', margin: 0, fontSize: '1rem' }}>Özel Liste Oluştur</h3>
+                <div style={{ color: '#888', fontSize: '0.8rem' }}>
+                    Başka bir mod seçerek paneli kapatabilirsiniz
+                </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '5px', position: 'relative' }}>
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddLocation()}
+                    onFocus={() => searchQuery && setShowSuggestions(true)}
+                    placeholder="Şehir adı yaz..."
+                    style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #444',
+                        background: 'rgba(0,0,0,0.5)',
+                        color: 'white',
+                        fontSize: '0.9rem'
+                    }}
+                />
+                <button
+                    onClick={handleAddLocation}
+                    disabled={isSearching}
+                    style={{
+                        padding: '8px 15px',
+                        background: '#00ff88',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        color: '#000',
+                        fontSize: '0.8rem'
+                    }}
+                >
+                    {isSearching ? '...' : 'EKLE'}
+                </button>
+            </div>
+
+            {/* ÖNERİLER */}
+            {showSuggestions && suggestions.length > 0 && (
+                <div style={{
+                    position: 'relative',
+                    background: 'rgba(30, 30, 40, 0.98)',
+                    border: '1px solid rgba(0, 255, 255, 0.3)',
+                    borderRadius: '6px',
+                    marginTop: '5px',
+                    maxHeight: '150px',
+                    overflowY: 'auto',
+                    zIndex: 1000
+                }}>
+                    {suggestions.map((prediction, idx) => (
+                        <div
+                            key={prediction.place_id}
+                            onClick={() => handleSelectSuggestion(prediction)}
+                            style={{
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderBottom: idx < suggestions.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                transition: 'background 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0, 255, 255, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                            <div style={{ color: '#00ffff', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                {prediction.structured_formatting.main_text}
+                            </div>
+                            <div style={{ color: '#888', fontSize: '0.75rem' }}>
+                                {prediction.structured_formatting.secondary_text}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div style={{
+                maxHeight: '150px',
+                overflowY: 'auto',
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: '6px',
+                padding: '5px'
+            }}>
+                {customLocations.length === 0 ? (
+                    <div style={{ padding: '10px', textAlign: 'center', color: '#666', fontSize: '0.8rem' }}>
+                        Henüz hiç konum eklemediniz.
+                    </div>
+                ) : (
+                    customLocations.map((loc, idx) => (
+                        <div key={idx} style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '6px 10px',
+                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'
+                        }}>
+                            <span style={{ color: '#ddd', fontSize: '0.85rem' }}>{loc.name}</span>
+                            <button
+                                onClick={() => handleRemoveLocation(idx)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#ff4444',
+                                    cursor: 'pointer',
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {customLocations.length > 0 && (
+                <div style={{ textAlign: 'right', color: '#888', fontSize: '0.7rem' }}>
+                    {customLocations.length} konum eklendi
+                </div>
+            )}
+
+            {/* ONAY BUTONU */}
+            <button
+                onClick={onClose}
+                style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'linear-gradient(to right, #00ff88, #00ffff)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    color: '#000',
+                    fontSize: '0.9rem',
+                    marginTop: '5px'
+                }}
+            >
+                ✓ ONAY - LİSTEYİ KAPAT
+            </button>
+        </div>
+    );
+};
+
+function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsername, myColor, isLoading, isIntermission, onLeave, gameMode, setGameMode, customLocations, setCustomLocations }) {
     const [username, setUsername] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [isThinking, setIsThinking] = useState(false);
+    const [isCustomPanelOpen, setIsCustomPanelOpen] = useState(false); // Panel görünürlüğü
+
+    // CUSTOM moduna geçildiğinde paneli otomatik aç
+    useEffect(() => {
+        if (gameMode === 'CUSTOM') {
+            setIsCustomPanelOpen(true);
+        } else {
+            setIsCustomPanelOpen(false);
+        }
+    }, [gameMode]);
+
+    useEffect(() => {
+        if (mode === 'lobby') {
+            setIsThinking(false);
+        }
+    }, [mode]);
     const [isCopied, setIsCopied] = useState(false);
 
     const generateRoomCode = () => {
@@ -143,8 +434,35 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
 
     // BEKLEME ODASI (WAITING ROOM)
     if (mode === 'waiting') {
+        const MODES = {
+            'WORLD': 'TÜM DÜNYA',
+            'CAPITALS': 'BAŞKENTLER',
+            'MOD3': 'MOD 3',
+            'MOD4': 'MOD 4',
+            'CUSTOM': 'KENDİN SEÇ'
+        };
+
         return (
             <div className="lobby-container">
+                {/* SEÇİLEN MOD GÖSTERGESİ */}
+                <div style={{
+                    position: 'absolute',
+                    top: '20px',
+                    right: '20px',
+                    background: 'rgba(0, 0, 0, 0.6)',
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    backdropFilter: 'blur(5px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    zIndex: 20
+                }}>
+                    <span style={{ fontSize: '0.8rem', color: '#aaa' }}>SEÇİLEN MOD:</span>
+                    <span style={{ fontSize: '0.9rem', color: '#00ffff', fontWeight: 'bold' }}>{MODES[gameMode] || gameMode}</span>
+                </div>
+
                 <div className="lobby-card" style={{ maxWidth: '450px' }}>
                     <h2 style={{ color: '#00ffff', marginBottom: '5px' }}>Oda Hazırlanıyor</h2>
                     <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem', marginBottom: '20px' }}>Arkadaşlar bekliyor...</p>
@@ -200,27 +518,107 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                     </div>
 
                     {isCreator ? (
-                        <button onClick={onStart} className="start-btn" disabled={isLoading} style={{
-                            width: '100%',
-                            padding: '15px',
-                            background: 'linear-gradient(to right, #00ff88, #00ffff)',
-                            color: '#000',
-                            border: 'none',
-                            borderRadius: '10px',
-                            fontSize: '1.2rem',
-                            fontWeight: '900',
-                            cursor: 'pointer',
-                            opacity: isLoading ? 0.7 : 1
-                        }}>
-                            {isLoading ? 'KONUM ARANIYOR...' : 'OYUNU BAŞLAT'}
+                        <button
+                            onClick={onStart}
+                            className="start-btn"
+                            disabled={isLoading || participants.length === 0}
+                            style={{
+                                width: '100%',
+                                padding: '15px',
+                                background: (isLoading || participants.length === 0) ? '#444' : 'linear-gradient(to right, #00ff88, #00ffff)',
+                                color: (isLoading || participants.length === 0) ? '#888' : '#000',
+                                border: 'none',
+                                borderRadius: '10px',
+                                fontSize: '1.2rem',
+                                fontWeight: '900',
+                                cursor: (isLoading || participants.length === 0) ? 'not-allowed' : 'pointer',
+                                opacity: 1
+                            }}>
+                            {isLoading ? 'KONUM ARANIYOR...' : (participants.length === 0 ? 'EN AZ 2 OYUNCU GEREKLİ' : 'OYUNU BAŞLAT')}
                         </button>
                     ) : (
                         <div style={{ color: '#00ff88', fontSize: '1rem', fontWeight: 'bold' }}>
                             Liderin oyunu başlatması bekleniyor...
                         </div>
                     )}
+
+                    {/* Ayrıl Butonu */}
+                    <button
+                        onClick={onLeave}
+                        className="join-btn"
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            marginTop: '10px'
+                        }}
+                    >
+                        ODADAN AYRIL
+                    </button>
                 </div>
                 <StreetViewBackground />
+
+                {/* OYUN MODU SEÇİM ÇUBUĞU */}
+                <div className="game-modes-bar">
+                    {[
+                        { id: 'WORLD', name: 'TÜM DÜNYA', icon: '🌍' },
+                        { id: 'CAPITALS', name: 'BAŞKENTLER', icon: '🏛️' },
+                        { id: 'MOD3', name: 'MOD 3', icon: '❓' },
+                        { id: 'MOD4', name: 'MOD 4', icon: '❓' },
+                        { id: 'CUSTOM', name: 'KENDİN SEÇ', icon: '✏️' }
+                    ].map((m) => (
+                        <div
+                            key={m.id}
+                            className={`mode-card ${gameMode === m.id ? 'active' : ''}`}
+                            onClick={() => isCreator && setGameMode && setGameMode(m.id)}
+                            style={{
+                                cursor: isCreator ? 'pointer' : 'not-allowed',
+                                opacity: isCreator ? 1 : 0.6
+                            }}
+                        >
+                            <div className="mode-card-inner">
+                                <div className="mode-icon">{m.icon}</div>
+                                <div className="mode-name">{m.name}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Custom Panel */}
+                {gameMode === 'CUSTOM' && isCreator && (
+                    <>
+                        {isCustomPanelOpen ? (
+                            <CustomLocationPanel
+                                customLocations={customLocations}
+                                setCustomLocations={setCustomLocations}
+                                onClose={() => setIsCustomPanelOpen(false)}
+                            />
+                        ) : (
+                            <button
+                                onClick={() => setIsCustomPanelOpen(true)}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: '160px',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    padding: '12px 24px',
+                                    background: 'rgba(0, 255, 136, 0.2)',
+                                    border: '2px solid #00ff88',
+                                    borderRadius: '10px',
+                                    color: '#00ff88',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                    zIndex: 99,
+                                    backdropFilter: 'blur(10px)'
+                                }}
+                            >
+                                ✏️ KONUM LİSTESİNİ DÜZENLE ({customLocations.length})
+                            </button>
+                        )}
+                    </>
+                )}
             </div>
         );
     }
@@ -314,9 +712,68 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                 </div>
             </div>
 
+
             <StreetViewBackground />
+
+            {/* OYUN MODU SEÇİM ÇUBUĞU - Giriş ekranında da seçilebilir */}
+            <div className="game-modes-bar">
+                {[
+                    { id: 'WORLD', name: 'TÜM DÜNYA', icon: '🌍' },
+                    { id: 'CAPITALS', name: 'BAŞKENTLER', icon: '🏛️' },
+                    { id: 'MOD3', name: 'MOD 3', icon: '❓' },
+                    { id: 'MOD4', name: 'MOD 4', icon: '❓' },
+                    { id: 'CUSTOM', name: 'KENDİN SEÇ', icon: '✏️' }
+                ].map((m) => (
+                    <div
+                        key={m.id}
+                        className={`mode-card ${gameMode === m.id ? 'active' : ''}`}
+                        onClick={() => setGameMode && setGameMode(m.id)}
+                    >
+                        <div className="mode-card-inner">
+                            <div className="mode-icon">{m.icon}</div>
+                            <div className="mode-name">{m.name}</div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Custom Panel - Entry ekranında da göster */}
+            {gameMode === 'CUSTOM' && (
+                <>
+                    {isCustomPanelOpen ? (
+                        <CustomLocationPanel
+                            customLocations={customLocations}
+                            setCustomLocations={setCustomLocations}
+                            onClose={() => setIsCustomPanelOpen(false)}
+                        />
+                    ) : (
+                        <button
+                            onClick={() => setIsCustomPanelOpen(true)}
+                            style={{
+                                position: 'absolute',
+                                bottom: '160px',
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                padding: '12px 24px',
+                                background: 'rgba(0, 255, 136, 0.2)',
+                                border: '2px solid #00ff88',
+                                borderRadius: '10px',
+                                color: '#00ff88',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem',
+                                zIndex: 99,
+                                backdropFilter: 'blur(10px)'
+                            }}
+                        >
+                            ✏️ KONUM LİSTESİNİ DÜZENLE ({customLocations.length})
+                        </button>
+                    )}
+                </>
+            )}
         </div>
     );
 }
 
 export default Lobby;
+

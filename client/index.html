@@ -9,10 +9,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&display=swap" rel="stylesheet">
+  <style>
+    /* Flash of Unstyled Content (FOUC) Engelleme */
+    body {
+      margin: 0;
+      background-color: #000;
+      color: white;
+      font-family: 'Fredoka', sans-serif;
+    }
+
+    #root:empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-size: 1.2rem;
+      opacity: 0.5;
+    }
+  </style>
 </head>
 
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div style="font-family: 'Fredoka', sans-serif;">Yükleniyor...</div>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
   <!-- GOOGLE_MAPS_SCRIPT -->
 </body>
