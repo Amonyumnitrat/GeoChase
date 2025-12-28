@@ -288,13 +288,14 @@ function App() {
         // Şimdilik sadece UI geçişi yeterli
     };
 
-    const [spawnDistance, setSpawnDistance] = useState(500); // 100m - 1000m
-    const [currentGameSpawnDist, setCurrentGameSpawnDist] = useState(500); // Oyun başladığındaki değer
+    const [spawnDistance, setSpawnDistance] = useState(300); // 100m - 500m
+    const [currentGameSpawnDist, setCurrentGameSpawnDist] = useState(300); // Oyun başladığındaki değer
 
     // Dinamik Aralık Hesaplayıcılar
+    // Yeni formül: 100m spawn = 50m görüş, 500m spawn = 100m görüş
     const calculateRanges = (dist) => {
-        const visibility = 20 + ((dist - 100) * (80 / 900));
-        const capture = 20 + ((dist - 100) * (30 / 900));
+        const visibility = 50 + ((dist - 100) * (50 / 400)); // 50m-100m arası
+        const capture = 20 + ((dist - 100) * (30 / 400)); // 20m-50m arası
         return {
             visibility: Math.round(visibility),
             capture: Math.round(capture)

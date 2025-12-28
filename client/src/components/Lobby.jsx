@@ -746,7 +746,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                     <input
                                         type="range"
                                         min="100"
-                                        max="1000"
+                                        max="500"
                                         step="50"
                                         value={spawnDistance}
                                         onChange={(e) => setSpawnDistance && setSpawnDistance(Number(e.target.value))}
@@ -754,7 +754,7 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                     />
                                     <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666', fontSize: '0.7rem' }}>
                                         <span>100m</span>
-                                        <span>1km</span>
+                                        <span>500m</span>
                                     </div>
                                 </div>
 
@@ -763,13 +763,13 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                     <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '5px', textAlign: 'center' }}>
                                         <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Görüş Mesafesi</div>
                                         <div style={{ color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                            {Math.round(20 + ((spawnDistance - 100) * (80 / 900)))}m
+                                            {Math.round(50 + ((spawnDistance - 100) * (50 / 400)))}m
                                         </div>
                                     </div>
                                     <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '5px', textAlign: 'center' }}>
                                         <div style={{ fontSize: '0.7rem', color: '#aaa' }}>Yakalama</div>
                                         <div style={{ color: '#FF9AA2', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                            {Math.round(20 + ((spawnDistance - 100) * (30 / 900)))}m
+                                            {Math.round(20 + ((spawnDistance - 100) * (30 / 400)))}m
                                         </div>
                                     </div>
                                 </div>
