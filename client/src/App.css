@@ -1,4 +1,4 @@
-#root {
+13#root {
   width: 100vw;
   min-height: 100vh;
   margin: 0;
@@ -136,14 +136,20 @@ img[src*="avatar.png"] {
 .lobby-container {
   width: 100vw;
   height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  /* İçerik esnek, alt bar sabit */
+  box-sizing: border-box;
   background: #000;
   position: relative;
   overflow: hidden;
   z-index: 5000;
-  /* Ensure on top */
+}
+
+/* Ana içerik alanı - Lobby kartını ortalar */
+.lobby-container>.lobby-card {
+  grid-row: 1;
+  place-self: center;
 }
 
 .lobby-bg {
@@ -153,7 +159,6 @@ img[src*="avatar.png"] {
   width: 100%;
   height: 100%;
   background: linear-gradient(135deg, #2B2E4A 0%, #53354A 100%);
-  /* Pastel Dark Theme */
   filter: blur(0px);
   z-index: -1;
 }
@@ -161,13 +166,14 @@ img[src*="avatar.png"] {
 .lobby-card {
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(20px);
-  padding: 3rem;
+  padding: 2rem;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
   text-align: center;
   width: 100%;
   max-width: 400px;
+  z-index: 5;
   animation: fadeInUp 0.5s ease-out;
 }
 
@@ -274,23 +280,24 @@ img[src*="avatar.png"] {
 
 /* GAME MODES BAR */
 .game-modes-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
+  grid-row: 2;
+  /* Grid'in ikinci satırı */
   width: 100%;
-  height: auto;
-  padding: 20px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 20%, transparent 100%);
+  padding: 15px 20px;
+  box-sizing: border-box;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 60%, transparent 100%);
   display: flex;
   justify-content: center;
-  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   z-index: 10;
-  /* Higher than bg but lower than modal alerts */
 }
 
 .mode-card {
-  width: 200px;
-  height: 120px;
+  width: 160px;
+  min-width: 120px;
+  height: 110px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -298,6 +305,7 @@ img[src*="avatar.png"] {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  flex-shrink: 1;
 }
 
 .mode-card:hover {
@@ -759,6 +767,85 @@ img[src*="avatar.png"] {
 
   .landing-nav {
     display: none;
+  }
+
+  .game-modes-bar {
+    padding: 15px 10px;
+    gap: 10px;
+  }
+
+  .mode-card {
+    width: 130px;
+    min-width: 100px;
+    height: 95px;
+  }
+
+  .mode-icon svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .mode-name {
+    font-size: 0.8rem;
+  }
+}
+
+/* 1366x768 ve benzeri ekranlar için */
+@media (max-width: 1400px) {
+  .lobby-card {
+    padding: 1.5rem;
+  }
+
+  .game-modes-bar {
+    padding: 10px 5px;
+    gap: 8px;
+  }
+
+  .mode-card {
+    width: 140px;
+    min-width: 110px;
+    height: 90px;
+  }
+
+  .mode-icon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .mode-name {
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+  }
+
+  .mode-card-inner {
+    padding: 8px;
+  }
+
+  .mode-icon {
+    margin-bottom: 5px;
+  }
+}
+
+/* Çok küçük ekranlar için (768px altı) */
+@media (max-width: 768px) {
+  .game-modes-bar {
+    padding: 10px 5px;
+    gap: 6px;
+  }
+
+  .mode-card {
+    width: 100px;
+    min-width: 80px;
+    height: 75px;
+  }
+
+  .mode-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .mode-name {
+    font-size: 0.65rem;
   }
 }
 

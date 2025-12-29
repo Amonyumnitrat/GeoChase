@@ -706,16 +706,38 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                                 Katılımcılar ({participants.length + 1})
                             </h3>
                             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {/* KENDİM */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <div style={{
-                                        width: '10px',
-                                        height: '10px',
-                                        borderRadius: '50%',
-                                        background: myColor || '#fff',
-                                        boxShadow: `0 0 8px ${myColor || '#fff'}`
-                                    }}></div>
-                                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{myUsername} (Sen)</span>
+                                {/* KENDİM + ÖZELLEŞTİR */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div style={{
+                                            width: '10px',
+                                            height: '10px',
+                                            borderRadius: '50%',
+                                            background: myColor || '#fff',
+                                            boxShadow: `0 0 8px ${myColor || '#fff'}`
+                                        }}></div>
+                                        <span style={{ color: '#fff', fontWeight: 'bold' }}>{myUsername} (Sen)</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsAvatarPanelOpen(true)}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '5px',
+                                            padding: '4px 10px',
+                                            background: 'rgba(199, 206, 234, 0.15)',
+                                            border: '1px solid rgba(199, 206, 234, 0.3)',
+                                            borderRadius: '15px',
+                                            color: '#C7CEEA',
+                                            cursor: 'pointer',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        <img src={myAvatar === 'char2' ? '/char_2.png' : '/char_1.png'} alt="" style={{ height: '18px' }} />
+                                        ✏️
+                                    </button>
                                 </div>
                                 {/* DİĞERLERİ */}
                                 {participants.map((p, idx) => (
@@ -949,42 +971,39 @@ function Lobby({ onJoin, mode, roomId, isCreator, participants, onStart, myUsern
                 <p className="game-subtitle">Dünya Çapında Gerçek Zamanlı Kovalamaca</p>
 
                 <div className="lobby-form">
-                    <div className="input-group">
-                        <input
-                            type="text"
-                            placeholder="Takma Adın..."
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            maxLength={12}
-                        />
-                    </div>
-
-                    {/* Karakter Özelleştir Butonu - Sağ Üst */}
-                    <div style={{
-                        position: 'absolute',
-                        top: '20px',
-                        right: '20px'
-                    }}>
+                    {/* Takma Ad + Özelleştir Satırı */}
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
+                        <div className="input-group" style={{ flex: 1 }}>
+                            <input
+                                type="text"
+                                placeholder="Takma Adın..."
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                maxLength={12}
+                            />
+                        </div>
                         <button
                             onClick={() => setIsAvatarPanelOpen(true)}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '8px',
-                                padding: '10px 15px',
-                                background: 'rgba(199, 206, 234, 0.2)',
-                                border: '1px solid rgba(199, 206, 234, 0.4)',
-                                borderRadius: '30px',
+                                gap: '6px',
+                                padding: '0 15px',
+                                background: 'rgba(199, 206, 234, 0.15)',
+                                border: '1px solid rgba(199, 206, 234, 0.3)',
+                                borderRadius: '10px',
                                 color: '#C7CEEA',
                                 cursor: 'pointer',
-                                fontSize: '0.85rem',
+                                fontSize: '0.8rem',
                                 fontWeight: 'bold',
-                                backdropFilter: 'blur(10px)',
-                                transition: 'all 0.3s'
+                                transition: 'all 0.3s',
+                                whiteSpace: 'nowrap'
                             }}
+                            onMouseEnter={(e) => e.target.style.background = 'rgba(199, 206, 234, 0.25)'}
+                            onMouseLeave={(e) => e.target.style.background = 'rgba(199, 206, 234, 0.15)'}
                         >
-                            <img src={myAvatar === 'char2' ? '/char_2.png' : '/char_1.png'} alt="Avatar" style={{ height: '30px' }} />
-                            Özelleştir
+                            <img src={myAvatar === 'char2' ? '/char_2.png' : '/char_1.png'} alt="Avatar" style={{ height: '28px' }} />
+                            ✏️
                         </button>
                     </div>
 
